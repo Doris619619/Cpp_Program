@@ -1,0 +1,10 @@
+^D:\CSC3002\LIBRARY_SYSTEM\CMAKELISTS.TXT
+setlocal
+D:\app\qt2\Tools\CMake_64\bin\cmake.exe -SD:/CSC3002/Library_System -BD:/CSC3002/Library_System/build --check-stamp-file D:/CSC3002/Library_System/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
