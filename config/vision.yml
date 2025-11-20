@@ -1,0 +1,23 @@
+# Vision configuration file
+seats_json: "config/seats.json"
+model_path: "data/models/yolox_s.onnx"
+vision_yaml: "config/vision.yml"
+log_dir: "logs"
+snapshot_dir: "cache/snap"
+
+input_w: 640
+input_h: 640
+
+conf_thres_person: 0.6
+conf_thres_person_low: 0.4
+conf_thres_object: 0.5
+nms_iou: 0.45
+iou_seat_intersect: 0.1
+mog2_fg_ratio_thres: 0.15
+
+snapshot_jpg_quality: 90
+snapshot_min_interval_ms: 5000
+snapshot_on_change_only: true
+snapshot_heartbeat_ms: 60000
+
+object_allow: [24, 26, 28, 32, 39, 56, 57, 60, 62, 63, 64, 65, 66, 67, 73, 74, 75, 76, 77, 78, 79, 80, 84]

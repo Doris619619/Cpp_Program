@@ -1,0 +1,7 @@
+{
+  "camera": { "width": 1920, "height": 1080 },
+  "seats": [
+    { "seat_id": "A1", "roi": { "x": 120, "y": 300, "w": 80, "h": 90 }, "zone": "Quiet" },
+    { "seat_id": "A2", "roi": { "x": 230, "y": 300, "w": 80, "h": 90 }, "zone": "Quiet" }
+  ]
+}
