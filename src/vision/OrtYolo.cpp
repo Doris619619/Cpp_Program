@@ -4,10 +4,18 @@
 
 namespace vision {
 
+// OrtYoloDetector initializor
 OrtYoloDetector::OrtYoloDetector(const Options& opt) : opt_(opt) {
     // 后续可在此初始化 ONNX Runtime 会话
+    /* onnxruntime will only be responsible for loading the .onnx files
+        keep the path in opt_.model_path for later use
+        the model should be loaded from ./data/models/ as default
+        
+    */
     ready_ = true;
 }
+
+//OrtYoloDetector::Env OrtYoloDetector::env_;
 
 bool OrtYoloDetector::isReady() const { return ready_; }
 

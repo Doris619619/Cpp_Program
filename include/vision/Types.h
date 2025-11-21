@@ -48,6 +48,18 @@ struct SeatFrameState {
 // 返回单帧所有座位状态的 .json 字符串
 std::string seatFrameStatesToJson(const std::vector<SeatFrameState>& states);
 
+// 返回包含帧级封装的一行 JSON（JSON Lines）
+// {
+//   frame_index, ts_ms, image_path, annotated_path,
+//   seats: [ { seat_id, seat_roi{x,y,w,h}, ... , person_boxes:[{x,y,w,h,conf,cls_id,cls_name}], object_boxes:[...] } ]
+// }
+std::string seatFrameStatesToJsonLine(
+    const std::vector<SeatFrameState>& states,
+    int64_t ts_ms,
+    int64_t frame_index,
+    const std::string& image_path,
+    const std::string& annotated_path);
+
 // 解析（如需要反序列化）
 bool parseSeatFrameStatesFromJson(const std::string& json, std::vector<SeatFrameState>& out);
 

@@ -54,14 +54,14 @@ std::vector<SeatFrameState> VisionA::processFrame(const cv::Mat& bgr, int64_t ts
         dets.push_back(b);
     }
 
-    // 简易分类过滤
+    // 人与物简易分类
     std::vector<BBox> persons, objects;
     for (auto& b : dets) {
         if (b.cls_name == "person") persons.push_back(b);
         else objects.push_back(b);
     }
 
-    // 3. 座位归属：根据 IoU 与阈值确定座位内元素
+    // 3. 座位归属: 根据IoU与thres确定座位内元素
     auto iouSeat = [](const cv::Rect& seat, const cv::Rect& box) {
         int ix = std::max(seat.x, box.x);
         int iy = std::max(seat.y, box.y);
@@ -73,41 +73,45 @@ std::vector<SeatFrameState> VisionA::processFrame(const cv::Mat& bgr, int64_t ts
         return uni<=0 ? 0.f : inter / uni;
     };
 
-    for (auto& s : impl_->seats) {
-        SeatFrameState st;
-        st.seat_id = s.seat_id;
-        st.ts_ms = ts_ms;
-        st.frame_index = frame_index;
-        st.seat_roi = s.rect;
+    /*      Output SeatFrameState for each seat 
+    *  record all the result into the vector containing all the SeatFrameState 
+    *  (denoted as out, std::vector<SeatFrameState> )
+    */
+    for (auto& each_seat : impl_->seats) {
+        SeatFrameState sfs;
+        sfs.seat_id = each_seat.seat_id;
+        sfs.ts_ms = ts_ms;
+        sfs.frame_index = frame_index;
+        sfs.seat_roi = each_seat.rect;
 
         // collect boxes inside seat
         for (auto& p : persons) {
-            if (iouSeat(s.rect, p.rect) > impl_->cfg.iou_seat_intersect) {
-                st.person_boxes_in_roi.push_back(p);
-                st.person_conf = std::max(st.person_conf, p.conf);
+            if (iouSeat(each_seat.rect, p.rect) > impl_->cfg.iou_seat_intersect) {
+                sfs.person_boxes_in_roi.push_back(p);
+                sfs.person_conf = std::max(sfs.person_conf, p.conf);
             }
         }
         for (auto& o : objects) {
-            if (iouSeat(s.rect, o.rect) > impl_->cfg.iou_seat_intersect) {
-                st.object_boxes_in_roi.push_back(o);
-                st.object_conf = std::max(st.object_conf, o.conf);
+            if (iouSeat(each_seat.rect, o.rect) > impl_->cfg.iou_seat_intersect) {
+                sfs.object_boxes_in_roi.push_back(o);
+                sfs.object_conf = std::max(sfs.object_conf, o.conf);
             }
         }
-        st.person_count = static_cast<int>(st.person_boxes_in_roi.size());
-        st.object_count = static_cast<int>(st.object_boxes_in_roi.size());
-        st.has_person = st.person_count > 0 && st.person_conf >= impl_->cfg.conf_thres_person;
-        st.has_object = st.object_count > 0 && st.object_conf >= impl_->cfg.conf_thres_object;
+        sfs.person_count = static_cast<int>(sfs.person_boxes_in_roi.size());
+        sfs.object_count = static_cast<int>(sfs.object_boxes_in_roi.size());
+        sfs.has_person = sfs.person_count > 0 && sfs.person_conf >= impl_->cfg.conf_thres_person;  // 有人 = 人数 > 0 and conf > conf_thres_person
+        sfs.has_object = sfs.object_count > 0 && sfs.object_conf >= impl_->cfg.conf_thres_object;  // 有物 = 物数 > 0 and conf > conf_thres_object
 
         // occupancy rule: has_person => OCCUPIED, else if has_object => OBJECT_ONLY, else EMPTY
-        if (st.has_person) st.occupancy_state = SeatOccupancyState::PERSON;
-        else if (st.has_object) st.occupancy_state = SeatOccupancyState::OBJECT_ONLY;
-        else st.occupancy_state = SeatOccupancyState::FREE;
+        if (sfs.has_person) sfs.occupancy_state = SeatOccupancyState::PERSON;
+        else if (sfs.has_object) sfs.occupancy_state = SeatOccupancyState::OBJECT_ONLY;
+        else sfs.occupancy_state = SeatOccupancyState::FREE;
 
-        out.push_back(std::move(st));
+        out.push_back(std::move(sfs));
     }
     auto t1 = std::chrono::high_resolution_clock::now();
     int total_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
-    for (auto& st : out) st.t_post_ms = total_ms; // 简化: 全流程耗时
+    for (auto& each_sfs : out) each_sfs.t_post_ms = total_ms; // 简化: 全流程耗时
     return out;
 }
 

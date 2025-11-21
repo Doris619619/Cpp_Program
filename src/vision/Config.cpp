@@ -21,6 +21,8 @@ VisionConfig VisionConfig::fromYaml(const std::string& yaml_path) {
         try_get(r, "vision_yaml",  c.vision_yaml);
         try_get(r, "log_dir",      c.log_dir);
         try_get(r, "snapshot_dir", c.snapshot_dir);
+        try_get(r, "states_output", c.states_output);
+        try_get(r, "annotated_frames_dir", c.annotated_frames_dir);
 
         try_get(r, "input_w", c.input_w);
         try_get(r, "input_h", c.input_h);
@@ -74,6 +76,8 @@ VisionConfig VisionConfig::fromJson(const std::string& json_path) {
         get_s("vision_yaml", c.vision_yaml);
         get_s("log_dir", c.log_dir);
         get_s("snapshot_dir", c.snapshot_dir);
+        get_s("states_output", c.states_output);
+        get_s("annotated_frames_dir", c.annotated_frames_dir);
 
         get_i("input_w", c.input_w);
         get_i("input_h", c.input_h);

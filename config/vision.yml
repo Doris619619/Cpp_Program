@@ -4,6 +4,8 @@ model_path: "data/models/yolox_s.onnx"
 vision_yaml: "config/vision.yml"
 log_dir: "logs"
 snapshot_dir: "cache/snap"
+states_output: "runtime/seat_states.jsonl"
+annotated_frames_dir: "runtime/frames"
 
 input_w: 640
 input_h: 640

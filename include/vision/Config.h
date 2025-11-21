@@ -13,6 +13,10 @@ struct VisionConfig {
     std::string vision_yaml  = "config/vision.yml";      // config file self path (yaml file contains the overall configuration for VisionA)
     std::string log_dir      = "logs";
     std::string snapshot_dir = "cache/snap";
+    // 每帧座位状态输出（JSON Lines），供 B/C 读取
+    std::string states_output = "runtime/seat_states.jsonl";
+    // 帧级标注输出目录（原始图 + 画框 + 座位ROI + 状态）供 C 使用
+    std::string annotated_frames_dir = "runtime/frames";
 
     // 模型输入尺寸
     int input_w = 640;

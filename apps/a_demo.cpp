@@ -14,6 +14,7 @@ int main() {
 #include <filesystem>
 #include <iostream>
 #include <chrono>
+#include <fstream>
 
 using namespace vision;
 
@@ -23,8 +24,10 @@ int64_t now_ms() {
 }
 
 int main(int argc, char** argv) {
-    std::string img_dir = "data/samples";
+    std::string img_dir = "data/samples";             // 输入图像目录
+    std::string override_out_states;                   // 可通过第二个参数覆盖输出文件
     if (argc > 1) img_dir = argv[1];
+    if (argc > 2) override_out_states = argv[2];
 
     std::cout << "a_demo starting...\n";
     std::cout << "CWD: " << std::filesystem::current_path().string() << "\n";
@@ -46,9 +49,11 @@ int main(int argc, char** argv) {
         std::cerr << "Hint: use data/samples (exists in repo).\n";
         return 1;
     }
+    // 使用配置中的 states_output，若用户命令行提供则覆盖
+    std::string out_states = override_out_states.empty() ? cfg.states_output : override_out_states;
     VisionA vision(cfg);
     std::cout << "Loaded seats from " << cfg.seats_json 
-            << ": count=" << vision.processFrame(cv::Mat(10,10,CV_8UC3), now_ms(), 0).size() 
+            << ": count=" << vision.processFrame(cv::Mat(10, 10, CV_8UC3), now_ms(), 0).size() 
             << " (dummy frame)\n";
     Publisher pub;
     pub.setCallback([](const std::vector<SeatFrameState>& states){
@@ -57,25 +62,81 @@ int main(int argc, char** argv) {
     vision.setPublisher(&pub);
 
     int64_t frame_index = 0;
+    // 创建输出目录（若路径不含父目录则跳过）
+    auto parent = std::filesystem::path(out_states).parent_path();
+    if (!parent.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            std::cerr << "Failed to create directory: " << parent.string() << " : " << ec.message() << "\n";
+        }
+    }
+    std::ofstream ofs(out_states, std::ios::app);
+    if (!ofs) {
+        std::cerr << "Failed to open output states file: " << out_states << "\n";
+        return 1;
+    }
+    std::cout << "States output file: " << std::filesystem::absolute(out_states).string() << "\n";
+    // 额外生成最新帧覆盖文件，便于快速查看（非行追加）
+    std::string latest_frame_file = (parent.empty() ? std::string("last_frame.json") : (parent / "last_frame.json").string());
+    // 帧标注目录
+    std::error_code ec_mk;
+    std::filesystem::create_directories(cfg.annotated_frames_dir, ec_mk);
+
     try {
         for (auto &entry : std::filesystem::directory_iterator(img_dir)) {
             if (!entry.is_regular_file()) continue;
-            cv::Mat bgr = cv::imread(entry.path().string());
+            std::string src_path = entry.path().string();
+            cv::Mat bgr = cv::imread(src_path);
             if (bgr.empty()) continue;
             auto states = vision.processFrame(bgr, now_ms(), frame_index++);
+            int64_t ts = states.empty() ? now_ms() : states.front().ts_ms;
+            // 控制台输出（便于调试）
             for (auto &s : states) {
-                std::cout << s.seat_id << " "
-                          << toString(s.occupancy_state)
+                std::cout << s.seat_id << " " << toString(s.occupancy_state)
                           << " pc=" << s.person_conf
                           << " oc=" << s.object_conf
                           << " fg=" << s.fg_ratio
                           << " snap=" << (s.snapshot_path.empty() ? "-" : s.snapshot_path)
                           << "\n";
             }
+            // 绘制并输出帧图（标注ROI与检测框）
+            cv::Mat vis = bgr.clone();
+            auto color_for_state = [](SeatOccupancyState st){
+                switch(st){
+                    case SeatOccupancyState::PERSON:        return cv::Scalar(0,0,255);   // red
+                    case SeatOccupancyState::OBJECT_ONLY:   return cv::Scalar(0,255,255); // yellow
+                    case SeatOccupancyState::FREE:          return cv::Scalar(0,255,0);   // green
+                    default:                                return cv::Scalar(200,200,200);
+                }
+            };
+            for (auto &s : states) {
+                cv::rectangle(vis, s.seat_roi, color_for_state(s.occupancy_state), 2);
+                for (auto &b : s.person_boxes_in_roi) {
+                    cv::rectangle(vis, b.rect, cv::Scalar(0,0,255), 2);
+                }
+                for (auto &b : s.object_boxes_in_roi) {
+                    cv::rectangle(vis, b.rect, cv::Scalar(0,255,255), 2);
+                }
+            }
+            std::string fname = entry.path().filename().string();
+            std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / fname).string();
+            cv::imwrite(annotated_path, vis);
+
+            // write JSON Lines: 帧级封装，含 ROI 与 boxes
+            std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, src_path, annotated_path);
+            ofs << line << "\n";
+            // overwrite latest frame file
+            {
+                std::ofstream lf(latest_frame_file, std::ios::trunc);
+                if (lf) lf << line << "\n";
+            }
         }
     } catch (const std::filesystem::filesystem_error& fe) {
         std::cerr << "filesystem error: " << fe.what() << "\n";
         return 1;
     }
+    std::cout << "Seat states appended to: " << out_states << "\n";
+    std::cout << "Latest frame snapshot: " << latest_frame_file << "\n";
     return 0;
 }

@@ -23,6 +23,7 @@ add_library(vision
   src/vision/OrtYolo.cpp
   src/vision/Nms.cpp
   src/vision/SeatRoi.cpp
+  src/vision/Types.cpp
   src/vision/Mog2.cpp
   src/vision/Snapshotter.cpp
   src/vision/Publish.cpp
@@ -44,7 +45,7 @@ add_executable(test_perf apps/test_perf.cpp)
 target_link_libraries(test_perf PRIVATE vision)
 
 add_executable(annotate_tables apps/annotate_tables.cpp)
-target_link_libraries(annotate_tables PRIVATE vision)
+target_link_libraries(annotate_tables PRIVATE vision opencv_highgui)
 
 
 # ---- ONNX Runtime 本地回退方案（不依赖 vcpkg 时启用） ----

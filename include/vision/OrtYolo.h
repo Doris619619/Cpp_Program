@@ -20,6 +20,10 @@ public:
         bool fake_infer = true;
     };
 
+    /*struct Env {
+        这里env需要有哪些内容？env与模型是什么关系？需要实现哪些操作？
+    };*/
+
     explicit OrtYoloDetector(const Options& opt);
     bool isReady() const;
     std::vector<RawDet> infer(const cv::Mat& resized_rgb); // resized 640x640
