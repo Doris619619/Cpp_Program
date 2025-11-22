@@ -12,17 +12,41 @@
 namespace vision {
 
     struct VisionA::Impl {
-        VisionConfig cfg;
+        VisionConfig cfg;                   // configurator &cfg
         std::vector<SeatROI> seats;
         OrtYoloDetector detector{ OrtYoloDetector::SessionOptions{ // struct session_options
             "data/models/yolov8n_640.onnx", // model path
             640,                            // input_w
             640,                            // input_h
-            true                            // fake_infer   
+            false                           // fake_infer = false 启用真实推理
         } };
+        struct SizeParseResult {
+            cv::Mat img;
+            float scale;
+            int dx, dy;
+        };
+
+        // method: resize the input img
+        static SizeParseResult sizeParse(const cv::Mat& src, int target_size) {
+            int w = src.cols, h = src.rows;
+            float scaling_rate = std::min((float)target_size / w, (float)target_size / h);
+            int new_w = int(std::round(w * scaling_rate));
+            int new_h = int(std::round(h * scaling_rate));
+            int dx = (target_size - new_w) / 2;
+            int dy = (target_size - new_h) / 2;
+
+            cv::Mat resized;
+            cv::resize(src, resized, cv::Size(new_w, new_h));
+
+            cv::Mat canvas = cv::Mat::zeros(target_size, target_size, src.type());
+            resized.copyTo(canvas(cv::Rect(dx, dy, new_w, new_h)));    
+            // now canvas contains the resized image, and canvas is cv::Mat
+
+            return {canvas, scaling_rate, dx, dy};
+        }
     };
 
-    VisionA::VisionA(const VisionConfig& cfg)
+    VisionA::VisionA(const VisionConfig& cfg) 
         : impl_(new Impl)
     {
         impl_->cfg = cfg;
@@ -34,26 +58,24 @@ namespace vision {
     std::vector<SeatFrameState> VisionA::processFrame(const cv::Mat& bgr, 
                                                       int64_t ts_ms, 
                                                       int64_t frame_index) 
-{
+    {
         auto t0 = std::chrono::high_resolution_clock::now();
         std::vector<SeatFrameState> out;
         out.reserve(impl_->seats.size());
 
         if (bgr.empty()) return out;
 
-        // 1. 预处理：resize 到 detector 输入尺寸 (640x640)
-        cv::Mat resized;
-        //cv::resize(bgr, resized, cv::Size(impl_->detector.isReady() ? impl_->detector.infer(resized).size(): 0), 0, 0); // placeholder to avoid unused warnings
-        cv::resize(bgr, resized, cv::Size(640, 640));
-        // difference to letterbox? 
+        // 1. 预处理：size parse dst: detector input size (640x640)
+        auto sizeParseRes = Impl::sizeParse(bgr, 640);
+        auto parsed_img = sizeParseRes.img;
 
-        // 2. 推理 (fake random detections); 将 RawDet 转为 BBox
-        auto raw = impl_->detector.infer(resized);
+        // 2. 推理: chg RawDet -> BBox
+        auto raw_detected = impl_->detector.infer(parsed_img);
         std::vector<BBox> dets;
-        dets.reserve(raw.size());
-        for (auto& r : raw) {
+        dets.reserve(raw_detected.size());
+        for (auto& r : raw_detected) {
             BBox b;
-            // scale 回原图坐标
+            // scale to original
             float sx = static_cast<float>(bgr.cols) / 640.f;
             float sy = static_cast<float>(bgr.rows) / 640.f;
             float x = r.cx - r.w * 0.5f;
@@ -68,52 +90,53 @@ namespace vision {
             dets.push_back(b);
         }
 
-        // 人与物简易分类
-        std::vector<BBox> persons, objects;
+        // 3. 人与物简易分类
+        std::vector<BBox> persons, objects;   // persons boxes and objects boxes
         for (auto& b : dets) {
             if (b.cls_name == "person") persons.push_back(b);
-            else objects.push_back(b);
+            else                        objects.push_back(b);
         }
-        // 3. 座位归属: 根据IoU与thres确定座位内元素
+
+        // 4. 座位归属: 根据IoU与thres确定座位内元素
         auto iouSeat = [](const cv::Rect& seat, const cv::Rect& box) {
             int ix = std::max(seat.x, box.x);
             int iy = std::max(seat.y, box.y);
             int iw = std::min(seat.x + seat.width, box.x + box.width) - ix;
             int ih = std::min(seat.y + seat.height, box.y + box.height) - iy;
-            if (iw <=0 || ih <=0) return 0.f;
+            if (iw <= 0 || ih <= 0) return 0.f;
             float inter = iw * ih;
             float uni = seat.width * seat.height + box.width * box.height - inter;
-            return uni<=0 ? 0.f : inter / uni;
+            return uni <= 0 ? 0.f : (inter / uni);  // IoU = inter / uni 交并比
         };
 
     /*      Output SeatFrameState for each seat 
     *  record all the result into the vector containing all the SeatFrameState 
     *  (denoted as out, std::vector<SeatFrameState> )
     */
-        for (auto& each_seat : impl_->seats) {
+        for (auto& each_seat : impl_->seats) {  // for each seat in seats table
             SeatFrameState sfs;
             sfs.seat_id = each_seat.seat_id;
             sfs.ts_ms = ts_ms;
             sfs.frame_index = frame_index;
             sfs.seat_roi = each_seat.rect;
 
-        // collect boxes inside seat
+            // collect boxes inside seat
             for (auto& p : persons) {
                 if (iouSeat(each_seat.rect, p.rect) > impl_->cfg.iou_seat_intersect) {
                     sfs.person_boxes_in_roi.push_back(p);
-                    sfs.person_conf = std::max(sfs.person_conf, p.conf);
+                    sfs.person_conf_max = std::max(sfs.person_conf_max, p.conf);
                 }
             }
             for (auto& o : objects) {
                 if (iouSeat(each_seat.rect, o.rect) > impl_->cfg.iou_seat_intersect) {
                     sfs.object_boxes_in_roi.push_back(o);
-                    sfs.object_conf = std::max(sfs.object_conf, o.conf);
+                    sfs.object_conf_max = std::max(sfs.object_conf_max, o.conf);
                 }
             }
             sfs.person_count = static_cast<int>(sfs.person_boxes_in_roi.size());
             sfs.object_count = static_cast<int>(sfs.object_boxes_in_roi.size());
-            sfs.has_person = sfs.person_count > 0 && sfs.person_conf >= impl_->cfg.conf_thres_person;  // 有人 = 人数 > 0 and conf > conf_thres_person
-            sfs.has_object = sfs.object_count > 0 && sfs.object_conf >= impl_->cfg.conf_thres_object;  // 有物 = 物数 > 0 and conf > conf_thres_object
+            sfs.has_person = sfs.person_count > 0 && sfs.person_conf_max >= impl_->cfg.conf_thres_person;  // 有人 = 人数 > 0 and conf > conf_thres_person
+            sfs.has_object = sfs.object_count > 0 && sfs.object_conf_max >= impl_->cfg.conf_thres_object;  // 有物 = 物数 > 0 and conf > conf_thres_object
 
             // occupancy rule: has_person => OCCUPIED, else if has_object => OBJECT_ONLY, else EMPTY
             if (sfs.has_person) sfs.occupancy_state = SeatOccupancyState::PERSON;

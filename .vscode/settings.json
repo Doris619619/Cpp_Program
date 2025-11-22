@@ -3,9 +3,13 @@
         "vector": "cpp",
         "xstring": "cpp",
         "memory": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "type_traits": "cpp"
     },
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.compilerPath": "D:\\Coding\\Microsoft Visual Studio\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\cl.exe",
+    "C_Cpp.default.intelliSenseMode": "msvc-x64"
 }

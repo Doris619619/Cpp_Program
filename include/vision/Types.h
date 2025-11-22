@@ -17,27 +17,27 @@ struct BBox {
 
 // 座位帧状态
 struct SeatFrameState {
-    int seat_id = -1;          // 与seat.json中的seat_id一致
+    int seat_id = -1;              // 与seat.json中的seat_id一致
     int64_t ts_ms = 0;
     int64_t frame_index = -1;
 
-    bool has_person = false;   // 该座位当前帧是否有人
-    bool has_object = false;   // 该座位当前帧是否有物品
+    bool has_person = false;       // 该座位当前帧是否有人
+    bool has_object = false;       // 该座位当前帧是否有物品
 
-    float person_conf = 0.f;   // 该座位内最高 person 置信度
-    float object_conf = 0.f;   // 该座位内最高允许物品类别置信度
-    float fg_ratio    = 0.f;   // MOG2 前景占比 0~1
+    float person_conf_max = 0.f;   // 该座位内最高 person 置信度
+    float object_conf_max = 0.f;   // 该座位内最高允许物品类别置信度
+    float fg_ratio    = 0.f;       // MOG2 前景占比 0~1
 
-    int person_count = 0;      // 该座位内检测到的人数    ？？
-    int object_count = 0;      // 该座位内检测到的物品数  ？？
+    int person_count = 0;          // 该座位内检测到的人数   
+    int object_count = 0;          // 该座位内检测到的物品数 
 
     SeatOccupancyState occupancy_state = SeatOccupancyState::UNKNOWN;
 
-    cv::Rect seat_roi;         // 座位 ROI
+    cv::Rect seat_roi;             // 座位 ROI
     std::vector<BBox> person_boxes_in_roi;
     std::vector<BBox> object_boxes_in_roi;
 
-    std::string snapshot_path; // 若本帧触发快照则非空
+    std::string snapshot_path;     // 若本帧触发快照则非空
 
     // 过程耗时 (ms) (performance metrics)
     int t_pre_ms  = 0;
@@ -48,7 +48,7 @@ struct SeatFrameState {
 // 返回单帧所有座位状态的 .json 字符串
 std::string seatFrameStatesToJson(const std::vector<SeatFrameState>& states);
 
-// 返回包含帧级封装的一行 JSON（JSON Lines）
+// 返回包含帧级封装的一行 .jsonl（JSON Lines）
 // {
 //   frame_index, ts_ms, image_path, annotated_path,
 //   seats: [ { seat_id, seat_roi{x,y,w,h}, ... , person_boxes:[{x,y,w,h,conf,cls_id,cls_name}], object_boxes:[...] } ]

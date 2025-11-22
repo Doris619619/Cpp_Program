@@ -30,6 +30,7 @@ namespace vision {
     //session_options.SetIntraOpNumThreads(0);   // auto decide threads usage
 
         explicit OrtYoloDetector(const SessionOptions& opt);
+        ~OrtYoloDetector() = default;
         bool const isReady();
         std::vector<RawDet> infer(const cv::Mat& resized_rgb); // resized 640x640
 

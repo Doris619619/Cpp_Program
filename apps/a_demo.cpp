@@ -1,4 +1,10 @@
-// Minimal demo executable entry point.
+/*  Name:  a_demo.cpp
+*   Usage: Configuration: cmake --build --preset msvc-ninja-debug
+*          Build:         .\build\a_demo.exe [img_dir=data\samples] [out_states_file=None]
+*   ==========================================================================================
+*   Minimal demo implemented basic dataflow pipeline invoking VisionA
+*/
+
 /*#include <iostream>
 
 int main() {
@@ -24,7 +30,7 @@ int64_t now_ms() {
 }
 
 int main(int argc, char** argv) {
-    std::string img_dir = "data/samples";             // 输入图像目录
+    std::string img_dir = "data/samples";              // 输入图像目录
     std::string override_out_states;                   // 可通过第二个参数覆盖输出文件
     if (argc > 1) img_dir = argv[1];
     if (argc > 2) override_out_states = argv[2];
@@ -49,7 +55,7 @@ int main(int argc, char** argv) {
         std::cerr << "Hint: use data/samples (exists in repo).\n";
         return 1;
     }
-    // 使用配置中的 states_output，若用户命令行提供则覆盖
+    // 使用配置中的 states_output，若用户cli提供则覆盖
     std::string out_states = override_out_states.empty() ? cfg.states_output : override_out_states;
     VisionA vision(cfg);
     std::cout << "Loaded seats from " << cfg.seats_json 
@@ -60,6 +66,8 @@ int main(int argc, char** argv) {
         std::cout << "Callback batch size = " << states.size() << "\n";
     });
     vision.setPublisher(&pub);
+    // note: 上面在count之后的processFrame会在count输出之前就输出一堆info，
+    //        其中包含不少failed的情况，疑似与.dll有关，需要纠正；后续输出都正常进行
 
     int64_t frame_index = 0;
     // 创建输出目录（若路径不含父目录则跳过）
@@ -94,8 +102,8 @@ int main(int argc, char** argv) {
             // 控制台输出（便于调试）
             for (auto &s : states) {
                 std::cout << s.seat_id << " " << toString(s.occupancy_state)
-                          << " pc=" << s.person_conf
-                          << " oc=" << s.object_conf
+                          << " pc=" << s.person_conf_max
+                          << " oc=" << s.object_conf_max
                           << " fg=" << s.fg_ratio
                           << " snap=" << (s.snapshot_path.empty() ? "-" : s.snapshot_path)
                           << "\n";
@@ -123,7 +131,7 @@ int main(int argc, char** argv) {
             std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / fname).string();
             cv::imwrite(annotated_path, vis);
 
-            // write JSON Lines: 帧级封装，含 ROI 与 boxes
+            // write .jsonl: 帧级封装，含 ROI 与 boxes
             std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, src_path, annotated_path);
             ofs << line << "\n";
             // overwrite latest frame file

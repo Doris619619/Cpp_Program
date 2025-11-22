@@ -31,8 +31,7 @@ namespace vision {
         ready_ = true;
     }
 
-    // OrtYoloDetector destructor 析构
-    OrtYoloDetector::~OrtYoloDetector() = default;
+    // OrtYoloDetector destructor: implemented in header
 
     bool const OrtYoloDetector::isReady() { return ready_; }
 

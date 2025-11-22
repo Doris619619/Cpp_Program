@@ -5,6 +5,7 @@ project(VISION_CORE LANGUAGES CXX)
 #cmake_minimum_required(VERSION 3.24)
 #project(Vision_Core LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenCV REQUIRED)
 
@@ -16,6 +17,19 @@ endif()
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+
+# head file path
+include_directories(
+  ./include/vision/Config.h
+  ./include/vision/Types.h
+  ./include/vision/VisionA.h
+  ./include/vision/OrtYolo.h
+  ./include/vision/Enums.h
+  ./include/vision/SeatRoi.h
+  ./include/vision/Mog2.h
+  ./include/vision/Snapshotter.h
+  ./include/vision/Publish.h
+)
 
 add_library(vision
   src/vision/Config.cpp
@@ -95,7 +109,9 @@ if(NOT TARGET onnxruntime)
     message(STATUS "[NOTICE] ONNX Runtime not found under ${ONNXRUNTIME_ROOT}; skipping ORT integration (fake_infer path active). (currently the ORT file is not yet generated thus if hard encoding, fatal error may occur.)")
   endif()
 endif()
-
+if(TARGET onnxruntime)
+  target_link_libraries(vision PUBLIC onnxruntime)
+endif()
 
 # 提示：实际目标（库/可执行）请在 src/ 与 apps/ 完成后补充。
 # 先保持可配置通过，避免引用不存在的源文件导致错误。

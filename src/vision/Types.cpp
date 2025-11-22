@@ -12,8 +12,8 @@ std::string seatFrameStatesToJson(const std::vector<SeatFrameState>& states) {
         o["frame_index"] = s.frame_index;
         o["has_person"] = s.has_person;
         o["has_object"] = s.has_object;
-        o["person_conf"] = s.person_conf;
-        o["object_conf"] = s.object_conf;
+        o["person_conf"] = s.person_conf_max;
+        o["object_conf"] = s.object_conf_max;
         o["fg_ratio"] = s.fg_ratio;
         o["person_count"] = s.person_count;
         o["object_count"] = s.object_count;
@@ -45,8 +45,8 @@ std::string seatFrameStatesToJsonLine(
         o["frame_index"] = s.frame_index;
         o["has_person"] = s.has_person;
         o["has_object"] = s.has_object;
-        o["person_conf"] = s.person_conf;
-        o["object_conf"] = s.object_conf;
+        o["person_conf"] = s.person_conf_max;
+        o["object_conf"] = s.object_conf_max;
         o["fg_ratio"] = s.fg_ratio;
         o["person_count"] = s.person_count;
         o["object_count"] = s.object_count;
@@ -89,5 +89,10 @@ std::string seatFrameStatesToJsonLine(
     root["seats"] = std::move(arr);
     return root.dump();
 }
+
+// temp implementation, not used yet
+bool parseSeatFrameStatesFromJson(const std::string& json, std::vector<SeatFrameState>& out) {
+    return false;
+};
 
 } // namespace vision
