@@ -108,8 +108,28 @@ int main(int argc, char** argv) {
                           << " snap=" << (s.snapshot_path.empty() ? "-" : s.snapshot_path)
                           << "\n";
             }
+            // 获取所有检测结果（不只是座位内的）
+            std::vector<BBox> all_persons, all_objects;
+            vision.getLastDetections(all_persons, all_objects);
+            
             // 绘制并输出帧图（标注ROI与检测框）
             cv::Mat vis = bgr.clone();
+            
+            // 1. 先绘制所有检测到的人和物体（全局）
+            for (auto &p : all_persons) {
+                cv::rectangle(vis, p.rect, cv::Scalar(255,0,255), 2);  // 紫色框 - 所有人
+                std::string label = "person " + std::to_string(int(p.conf * 100)) + "%";
+                cv::putText(vis, label, cv::Point(p.rect.x, p.rect.y - 5),
+                           cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255,0,255), 1);
+            }
+            for (auto &o : all_objects) {
+                cv::rectangle(vis, o.rect, cv::Scalar(255,255,0), 2);  // 青色框 - 所有物体
+                std::string label = o.cls_name + " " + std::to_string(int(o.conf * 100)) + "%";
+                cv::putText(vis, label, cv::Point(o.rect.x, o.rect.y - 5),
+                           cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255,255,0), 1);
+            }
+            
+            // 2. 再绘制座位 ROI（根据占用状态着色）
             auto color_for_state = [](SeatOccupancyState st){
                 switch(st){
                     case SeatOccupancyState::PERSON:        return cv::Scalar(0,0,255);   // red
@@ -119,14 +139,20 @@ int main(int argc, char** argv) {
                 }
             };
             for (auto &s : states) {
-                cv::rectangle(vis, s.seat_roi, color_for_state(s.occupancy_state), 2);
+                /*cv::rectangle(vis, s.seat_roi, color_for_state(s.occupancy_state), 2);
                 for (auto &b : s.person_boxes_in_roi) {
                     cv::rectangle(vis, b.rect, cv::Scalar(0,0,255), 2);
                 }
                 for (auto &b : s.object_boxes_in_roi) {
                     cv::rectangle(vis, b.rect, cv::Scalar(0,255,255), 2);
-                }
+                }*/
+                cv::rectangle(vis, s.seat_roi, color_for_state(s.occupancy_state), 3);
+                // 在座位框上标注座位ID和状态
+                std::string seat_label = "Seat " + std::to_string(s.seat_id) + " " + toString(s.occupancy_state);
+                cv::putText(vis, seat_label, cv::Point(s.seat_roi.x, s.seat_roi.y - 10),
+                           cv::FONT_HERSHEY_SIMPLEX, 0.6, color_for_state(s.occupancy_state), 2);
             }
+            
             std::string fname = entry.path().filename().string();
             std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / fname).string();
             cv::imwrite(annotated_path, vis);

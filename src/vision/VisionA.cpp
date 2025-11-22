@@ -20,6 +20,9 @@ namespace vision {
             640,                            // input_h
             false                           // fake_infer = false 启用真实推理
         } };
+        // 存储最后一帧的所有检测结果
+        std::vector<BBox> last_persons;
+        std::vector<BBox> last_objects;
         struct SizeParseResult {
             cv::Mat img;
             float scale;
@@ -96,6 +99,10 @@ namespace vision {
             if (b.cls_name == "person") persons.push_back(b);
             else                        objects.push_back(b);
         }
+        
+        // 保存本帧所有检测结果供外部访问
+        impl_->last_persons = persons;
+        impl_->last_objects = objects;
 
         // 4. 座位归属: 根据IoU与thres确定座位内元素
         auto iouSeat = [](const cv::Rect& seat, const cv::Rect& box) {
@@ -149,6 +156,11 @@ namespace vision {
         int total_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
         for (auto& each_sfs : out) each_sfs.t_post_ms = total_ms; // 简化: 全流程耗时
         return out;
+    }
+
+    void VisionA::getLastDetections(std::vector<BBox>& out_persons, std::vector<BBox>& out_objects) const {
+        out_persons = impl_->last_persons;
+        out_objects = impl_->last_objects;
     }
 
     void VisionA::setPublisher(Publisher* p) {

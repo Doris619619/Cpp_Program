@@ -16,6 +16,9 @@ public:
                                              int64_t ts_ms,
                                              int64_t frame_index = -1);
 
+    // 获取上一帧的所有检测结果（人和物体）
+    void getLastDetections(std::vector<BBox>& out_persons, std::vector<BBox>& out_objects) const;
+
     void setPublisher(Publisher* p); // 不持有 not set yet
 
 private:

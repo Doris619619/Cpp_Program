@@ -33,12 +33,24 @@ int main(int argc, char** argv) {
         if (e == cv::EVENT_LBUTTONDOWN) cur->push_back({x,y});
     }, &current);
 
-    std::cout << "Instructions:\n"
-              << " - Left click: add point for current table polygon\n"
-              << " - ENTER: finish current table polygon and add to list\n"
-              << " - BACKSPACE: undo last point\n"
-              << " - C: clear current polygon\n"
-              << " - S: save seats.json (split each table by layout=" << layout << ") and exit\n";
+    std::cout << "==========================================\n"
+              << "   Seat/Table Annotation Tool\n"
+              << "==========================================\n"
+              << "Usage: " << argv[0] << " [image] [output.json] [layout]\n"
+              << "  image:  input image path (default: data/samples/annotate.jpg)\n"
+              << "  output: output JSON path (default: config/seats.json)\n"
+              << "  layout: seat layout per table (default: 2x2)\n"
+              << "           examples: 2x2 (4 seats), 3x2 (6 seats), 4x2 (8 seats)\n\n"
+              << "Instructions:\n"
+              << "  左键点击    - 添加桌子多边形的顶点\n"
+              << "  ENTER      - 完成当前桌子多边形并添加到列表\n"
+              << "  BACKSPACE  - 撤销上一个顶点\n"
+              << "  C          - 清除当前多边形\n"
+              << "  S          - 保存座位配置到 JSON 文件并退出\n"
+              << "  ESC        - 退出（不保存）\n\n"
+              << "当前配置: layout=" << layout << " (每张桌子 " 
+              << layout[0] - '0' << "x" << layout[2] - '0' << " 个座位)\n"
+              << "==========================================\n";
 
     // drawing process
     while (true) {
