@@ -139,18 +139,30 @@ int main(int argc, char** argv) {
                 }
             };
             for (auto &s : states) {
-                /*cv::rectangle(vis, s.seat_roi, color_for_state(s.occupancy_state), 2);
-                for (auto &b : s.person_boxes_in_roi) {
-                    cv::rectangle(vis, b.rect, cv::Scalar(0,0,255), 2);
+                auto color = color_for_state(s.occupancy_state);
+                
+                // 如果有多边形，优先绘制多边形；否则绘制矩形
+                if (s.seat_poly.size() >= 3) {
+                    // 绘制多边形座位
+                    std::vector<std::vector<cv::Point>> contours = { s.seat_poly };
+                    cv::polylines(vis, contours, true, color, 3);
+                    
+                    // 在多边形中心标注座位ID和状态
+                    cv::Moments m = cv::moments(s.seat_poly);
+                    if (m.m00 != 0) {
+                        cv::Point center(static_cast<int>(m.m10 / m.m00), static_cast<int>(m.m01 / m.m00));
+                        std::string seat_label = "S" + std::to_string(s.seat_id) + " " + toString(s.occupancy_state);
+                        cv::putText(vis, seat_label, center,
+                                   cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2);
+                    }
+                } else {
+                    // 绘制矩形座位
+                    cv::rectangle(vis, s.seat_roi, color, 3);
+                    // 在座位框上标注座位ID和状态
+                    std::string seat_label = "Seat " + std::to_string(s.seat_id) + " " + toString(s.occupancy_state);
+                    cv::putText(vis, seat_label, cv::Point(s.seat_roi.x, s.seat_roi.y - 10),
+                               cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2);
                 }
-                for (auto &b : s.object_boxes_in_roi) {
-                    cv::rectangle(vis, b.rect, cv::Scalar(0,255,255), 2);
-                }*/
-                cv::rectangle(vis, s.seat_roi, color_for_state(s.occupancy_state), 3);
-                // 在座位框上标注座位ID和状态
-                std::string seat_label = "Seat " + std::to_string(s.seat_id) + " " + toString(s.occupancy_state);
-                cv::putText(vis, seat_label, cv::Point(s.seat_roi.x, s.seat_roi.y - 10),
-                           cv::FONT_HERSHEY_SIMPLEX, 0.6, color_for_state(s.occupancy_state), 2);
             }
             
             std::string fname = entry.path().filename().string();

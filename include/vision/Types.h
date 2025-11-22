@@ -33,7 +33,8 @@ struct SeatFrameState {
 
     SeatOccupancyState occupancy_state = SeatOccupancyState::UNKNOWN;
 
-    cv::Rect seat_roi;             // 座位 ROI
+    cv::Rect seat_roi;             // 座位 ROI（矩形或多边形的外接矩形）
+    std::vector<cv::Point> seat_poly;  // 座位多边形（若有），优先使用多边形判定
     std::vector<BBox> person_boxes_in_roi;
     std::vector<BBox> object_boxes_in_roi;
 

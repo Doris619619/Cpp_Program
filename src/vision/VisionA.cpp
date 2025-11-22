@@ -104,7 +104,7 @@ namespace vision {
         impl_->last_persons = persons;
         impl_->last_objects = objects;
 
-        // 4. 座位归属: 根据IoU与thres确定座位内元素
+        // 4. 座位归属: 根据IoU或多边形包含判定座位内元素
         auto iouSeat = [](const cv::Rect& seat, const cv::Rect& box) {
             int ix = std::max(seat.x, box.x);
             int iy = std::max(seat.y, box.y);
@@ -114,6 +114,14 @@ namespace vision {
             float inter = iw * ih;
             float uni = seat.width * seat.height + box.width * box.height - inter;
             return uni <= 0 ? 0.f : (inter / uni);  // IoU = inter / uni 交并比
+        };
+        
+        // 多边形包含判定：检测框中心点是否在多边形内
+        auto isBoxInPoly = [](const std::vector<cv::Point>& poly, const cv::Rect& box) {
+            if (poly.size() < 3) return false;
+            cv::Point center(box.x + box.width / 2, box.y + box.height / 2);
+            double dist = cv::pointPolygonTest(poly, center, false);
+            return dist >= 0;  // >= 0 表示在多边形内或边界上
         };
 
     /*      Output SeatFrameState for each seat 
@@ -126,16 +134,24 @@ namespace vision {
             sfs.ts_ms = ts_ms;
             sfs.frame_index = frame_index;
             sfs.seat_roi = each_seat.rect;
+            sfs.seat_poly = each_seat.poly;  // 保存多边形信息
+            
+            // 判断使用多边形还是矩形
+            bool use_poly = each_seat.poly.size() >= 3;
 
             // collect boxes inside seat
             for (auto& p : persons) {
-                if (iouSeat(each_seat.rect, p.rect) > impl_->cfg.iou_seat_intersect) {
+                bool inside = use_poly ? isBoxInPoly(each_seat.poly, p.rect) 
+                                       : (iouSeat(each_seat.rect, p.rect) > impl_->cfg.iou_seat_intersect);
+                if (inside) {
                     sfs.person_boxes_in_roi.push_back(p);
                     sfs.person_conf_max = std::max(sfs.person_conf_max, p.conf);
                 }
             }
             for (auto& o : objects) {
-                if (iouSeat(each_seat.rect, o.rect) > impl_->cfg.iou_seat_intersect) {
+                bool inside = use_poly ? isBoxInPoly(each_seat.poly, o.rect)
+                                       : (iouSeat(each_seat.rect, o.rect) > impl_->cfg.iou_seat_intersect);
+                if (inside) {
                     sfs.object_boxes_in_roi.push_back(o);
                     sfs.object_conf_max = std::max(sfs.object_conf_max, o.conf);
                 }

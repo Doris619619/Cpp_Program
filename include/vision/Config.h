@@ -8,7 +8,7 @@ namespace vision {
 struct VisionConfig {
     // ===================== 字段fields ===================== //
     
-    std::string seats_json   = "config/test_seats.json";//"config/seats.json";             // seats ROI configs (preset manually? or via VisionB auto-detect? )
+    std::string seats_json   = "config/poly_seats.json";//test_seats.json";//"config/seats.json";             // seats ROI configs (preset manually? or via VisionB auto-detect? )
     std::string model_path   = "data/models/yolov8n_640.onnx";  // available onnx models path
     std::string vision_yaml  = "config/vision.yml";             // config file self path (yaml file contains the overall configuration for VisionA)
     std::string log_dir      = "logs";

@@ -1,5 +1,5 @@
 # Vision configuration file
-seats_json: "config/test_seats.json"
+seats_json: "config/poly_seats.json"
 model_path: "data/models/yolov8n_640.onnx"
 vision_yaml: "config/vision.yml"
 log_dir: "logs"

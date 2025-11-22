@@ -16,7 +16,7 @@ static void draw_poly(cv::Mat& img, const std::vector<cv::Point>& poly, const cv
 int main(int argc, char** argv) {
     std::string img_path = argc > 1 ? argv[1]: "data/samples/annotate.jpg";
     std::string out_json = argc > 2 ? argv[2]: "config/seats.json";
-    std::string layout   = argc > 3 ? argv[3]: "2x2"; // 2x2 默认四人桌
+    std::string layout   = argc > 3 ? (argv[3] == "2x2" ? "2x2" : "single"): "single"; // single 单个座位; 2x2 四人桌
 
     cv::Mat img = cv::imread(img_path);
     if (img.empty()) { 
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
         return 1; 
     }
 
-    std::vector<std::vector<cv::Point>> tables; // polygons of tables
+    std::vector<std::vector<cv::Point>> tables; // polygons of tables/seats
     std::vector<cv::Point> current;             // current polygon being drawn
 
     cv::namedWindow("annotate", cv::WINDOW_NORMAL);
@@ -39,18 +39,23 @@ int main(int argc, char** argv) {
               << "Usage: " << argv[0] << " [image] [output.json] [layout]\n"
               << "  image:  input image path (default: data/samples/annotate.jpg)\n"
               << "  output: output JSON path (default: config/seats.json)\n"
-              << "  layout: seat layout per table (default: 2x2)\n"
-              << "           examples: 2x2 (4 seats), 3x2 (6 seats), 4x2 (8 seats)\n\n"
+              << "  layout: seat layout (default: single)\n"
+              << "          - single: each polygon = one seat (saved as polygon)\n"
+              << "          - 2x2, 3x2, 4x2: split table into NxM rectangular seats\n\n"
               << "Instructions:\n"
-              << "  左键点击    - 添加桌子多边形的顶点\n"
-              << "  ENTER      - 完成当前桌子多边形并添加到列表\n"
-              << "  BACKSPACE  - 撤销上一个顶点\n"
-              << "  C          - 清除当前多边形\n"
-              << "  S          - 保存座位配置到 JSON 文件并退出\n"
-              << "  ESC        - 退出（不保存）\n\n"
-              << "当前配置: layout=" << layout << " (每张桌子 " 
-              << layout[0] - '0' << "x" << layout[2] - '0' << " 个座位)\n"
-              << "==========================================\n";
+              << "  Left Click  - Add vertex to current polygon\n"
+              << "  ENTER       - Finish current polygon and add to list\n"
+              << "  BACKSPACE   - Undo last vertex\n"
+              << "  C           - Clear current polygon\n"
+              << "  S           - Save seats to JSON file and exit\n"
+              << "  ESC         - Exit without saving\n\n"
+              << "Current config: layout=" << layout;
+    if (layout == "single") {
+        std::cout << " (each polygon is one seat)\n";
+    } else {
+        std::cout << " (split each table into multiple seats)\n";
+    }
+    std::cout << "==========================================\n";
 
     // drawing process
     while (true) {
@@ -73,15 +78,29 @@ int main(int argc, char** argv) {
         } else if (k == 's' || k == 'S') {
             std::vector<SeatROI> seats;
             int tid = 0;
-            for (auto& t : tables) {
-                auto rects = splitTablePolyToSeats(t, layout);
-                for (size_t i = 0; i < rects.size(); ++i) {
-                    SeatROI s; 
-                    s.seat_id = (++tid); 
-                    s.rect = rects[i]; 
+            
+            if (layout == "single") {
+                // Single mode: each polygon is one seat, save as polygon directly
+                for (auto& t : tables) {
+                    SeatROI s;
+                    s.seat_id = (++tid);
+                    s.poly = t;  // Store polygon directly
+                    s.rect = cv::boundingRect(t);  // Also compute bounding rect for compatibility
                     seats.push_back(std::move(s));
                 }
+            } else {
+                // Split mode: divide each table polygon into NxM rectangular seats
+                for (auto& t : tables) {
+                    auto rects = splitTablePolyToSeats(t, layout);
+                    for (size_t i = 0; i < rects.size(); ++i) {
+                        SeatROI s; 
+                        s.seat_id = (++tid); 
+                        s.rect = rects[i]; 
+                        seats.push_back(std::move(s));
+                    }
+                }
             }
+            
             if (saveSeatsToJson(out_json, seats)) {
                 std::cout << "Saved seats to " << out_json << " (" << seats.size() << " seats)\n";
             } else {
