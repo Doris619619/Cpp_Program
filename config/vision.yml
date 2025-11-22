@@ -1,6 +1,6 @@
 # Vision configuration file
 seats_json: "config/seats.json"
-model_path: "data/models/yolox_s.onnx"
+model_path: "data/models/yolov8n_640.onnx"
 vision_yaml: "config/vision.yml"
 log_dir: "logs"
 snapshot_dir: "cache/snap"

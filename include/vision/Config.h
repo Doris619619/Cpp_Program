@@ -8,9 +8,9 @@ namespace vision {
 struct VisionConfig {
     // ===================== 字段fields ===================== //
     
-    std::string seats_json   = "config/seats.json";      // seats ROI configs (preset manually? or via VisionB auto-detect? )
-    std::string model_path   = "data/models/yolo.onnx";  // available onnx models path
-    std::string vision_yaml  = "config/vision.yml";      // config file self path (yaml file contains the overall configuration for VisionA)
+    std::string seats_json   = "config/seats.json";             // seats ROI configs (preset manually? or via VisionB auto-detect? )
+    std::string model_path   = "data/models/yolov8n_640.onnx";  // available onnx models path
+    std::string vision_yaml  = "config/vision.yml";             // config file self path (yaml file contains the overall configuration for VisionA)
     std::string log_dir      = "logs";
     std::string snapshot_dir = "cache/snap";
     // 每帧座位状态输出（JSON Lines），供 B/C 读取
@@ -63,7 +63,7 @@ struct VisionConfig {
     bool enable_async_snapshot = true;
 
     // 兼容预留字段：可用于不同 YOLO 解码类型
-    std::string yolo_variant = "yolox"; // 或 "yolov5", "yolov8"
+    std::string yolo_variant = "yolov8"; // 或 "yolov5", "yolov8"
 
     // ===================== 方法methods ===================== //
 

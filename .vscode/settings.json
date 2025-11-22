@@ -1,6 +1,11 @@
 {
     "files.associations": {
         "vector": "cpp",
-        "xstring": "cpp"
-    }
+        "xstring": "cpp",
+        "memory": "cpp",
+        "functional": "cpp"
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python-envs.pythonProjects": []
 }
