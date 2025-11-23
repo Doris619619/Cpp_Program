@@ -42,11 +42,12 @@ add_library(vision
   src/vision/Snapshotter.cpp
   src/vision/Publish.cpp
   src/vision/Logging.cpp
+  src/vision/FrameExtractor.cpp
 )
 target_include_directories(vision PUBLIC include)
 target_link_libraries(vision
   PUBLIC
-    opencv_core opencv_imgproc opencv_imgcodecs opencv_video
+    opencv_core opencv_imgproc opencv_imgcodecs opencv_video opencv_videoio
     nlohmann_json::nlohmann_json
     yaml-cpp::yaml-cpp
     spdlog::spdlog
@@ -60,6 +61,9 @@ target_link_libraries(test_perf PRIVATE vision)
 
 add_executable(annotate_tables apps/annotate_tables.cpp)
 target_link_libraries(annotate_tables PRIVATE vision opencv_highgui)
+
+add_executable(frame_extract apps/frame_extract.cpp)
+target_link_libraries(frame_extract PRIVATE vision)
 
 
 # ---- ONNX Runtime 本地回退方案（不依赖 vcpkg 时启用） ----
