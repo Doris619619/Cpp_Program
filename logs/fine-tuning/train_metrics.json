@@ -1,0 +1,8 @@
+{
+  "train_images": 677,
+  "val_images": 12,
+  "epochs": 8,
+  "imgsz": 640,
+  "batch": 16,
+  "device": "cpu"
+}

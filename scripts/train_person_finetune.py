@@ -75,9 +75,11 @@ def main():
 
     # Update YAML
     data_yaml = root/'data_person.yaml'
+    train_abs = train_img_dir.resolve()
+    val_abs = val_img_dir.resolve()
     with open(data_yaml,'w',encoding='utf-8') as f:
-        f.write('train: '+str(train_img_dir).replace('\\','/')+'\n')
-        f.write('val: '+str(val_img_dir).replace('\\','/')+'\n')
+        f.write('train: '+str(train_abs).replace('\\','/')+'\n')
+        f.write('val: '+str(val_abs).replace('\\','/')+'\n')
         f.write("names: ['person']\n")
 
     model = YOLO(args.model)
