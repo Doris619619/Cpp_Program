@@ -20,7 +20,7 @@ public:
         int startFrame = 0,
         int endFrame = -1);
 
-    // 将视频帧导出为目录内的一系列 JPG 图片，返回成功导出的数量
+    // 将视频帧导出为目录内的一系列 .jpg 图片，返回成功导出的数量
     static size_t extractToDir(
         const std::string& videoPath,
         const std::string& outDir,

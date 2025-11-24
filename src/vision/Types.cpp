@@ -58,6 +58,12 @@ std::string seatFrameStatesToJsonLine(
             {"x", s.seat_roi.x}, {"y", s.seat_roi.y},
             {"w", s.seat_roi.width}, {"h", s.seat_roi.height}
         };
+        // 多边形（若存在）
+        if (!s.seat_poly.empty()) {
+            nlohmann::json poly = nlohmann::json::array();
+            for (auto &p : s.seat_poly) poly.push_back({p.x, p.y});
+            o["seat_poly"] = std::move(poly);
+        }
 
         // Boxes
         nlohmann::json pboxes = nlohmann::json::array();

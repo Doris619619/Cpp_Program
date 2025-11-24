@@ -5,6 +5,7 @@
 #include "vision/Types.h"
 #include "vision/Config.h"
 #include "vision/OrtYolo.h"
+#include "vision/Mog2.h"
 #include <opencv2/imgproc.hpp>
 #include <fstream>
 #include <chrono>
@@ -20,6 +21,7 @@ namespace vision {
             640,                            // input_h
             false                           // fake_infer = false 启用真实推理
         } };
+        Mog2Manager mog2{ Mog2Config{ cfg.mog2_history, cfg.mog2_var_threshold, cfg.mog2_detect_shadows } };
         // 存储最后一帧的所有检测结果
         std::vector<BBox> last_persons;
         std::vector<BBox> last_objects;
@@ -68,7 +70,10 @@ namespace vision {
 
         if (bgr.empty()) return out;
 
-        // 1. 预处理：size parse dst: detector input size (640x640)
+        // 1. 前景分割（原尺寸）
+        cv::Mat fg_mask = impl_->mog2.apply(bgr);
+
+        // 2. 预处理：letterbox（保持比例，减少形变）
         auto sizeParseRes = Impl::sizeParse(bgr, 640);
         auto parsed_img = sizeParseRes.img;
 
@@ -104,7 +109,7 @@ namespace vision {
         impl_->last_persons = persons;
         impl_->last_objects = objects;
 
-        // 4. 座位归属: 根据IoU或多边形包含判定座位内元素
+        // 4. 座位归属: 根据多边形包含或 IoU 判定座位内元素
         auto iouSeat = [](const cv::Rect& seat, const cv::Rect& box) {
             int ix = std::max(seat.x, box.x);
             int iy = std::max(seat.y, box.y);
@@ -141,20 +146,57 @@ namespace vision {
 
             // collect boxes inside seat
             for (auto& p : persons) {
-                bool inside = use_poly ? isBoxInPoly(each_seat.poly, p.rect) 
-                                       : (iouSeat(each_seat.rect, p.rect) > impl_->cfg.iou_seat_intersect);
+                bool inside = false;
+                if (use_poly) {
+                    // 增强：框中心或四角任一在多边形内
+                    if (isBoxInPoly(each_seat.poly, p.rect)) inside = true;
+                    else {
+                        std::array<cv::Point,4> corners = {
+                            cv::Point(p.rect.x, p.rect.y),
+                            cv::Point(p.rect.x+p.rect.width, p.rect.y),
+                            cv::Point(p.rect.x, p.rect.y+p.rect.height),
+                            cv::Point(p.rect.x+p.rect.width, p.rect.y+p.rect.height)
+                        };
+                        for (auto &c : corners) {
+                            if (cv::pointPolygonTest(each_seat.poly, c, false) >= 0) { inside = true; break; }
+                        }
+                    }
+                } else {
+                    inside = (iouSeat(each_seat.rect, p.rect) > impl_->cfg.iou_seat_intersect);
+                }
                 if (inside) {
                     sfs.person_boxes_in_roi.push_back(p);
                     sfs.person_conf_max = std::max(sfs.person_conf_max, p.conf);
                 }
             }
             for (auto& o : objects) {
-                bool inside = use_poly ? isBoxInPoly(each_seat.poly, o.rect)
-                                       : (iouSeat(each_seat.rect, o.rect) > impl_->cfg.iou_seat_intersect);
+                bool inside = false;
+                if (use_poly) {
+                    if (isBoxInPoly(each_seat.poly, o.rect)) inside = true;
+                    else {
+                        std::array<cv::Point,4> corners = {
+                            cv::Point(o.rect.x, o.rect.y),
+                            cv::Point(o.rect.x+o.rect.width, o.rect.y),
+                            cv::Point(o.rect.x, o.rect.y+o.rect.height),
+                            cv::Point(o.rect.x+o.rect.width, o.rect.y+o.rect.height)
+                        };
+                        for (auto &c : corners) {
+                            if (cv::pointPolygonTest(each_seat.poly, c, false) >= 0) { inside = true; break; }
+                        }
+                    }
+                } else {
+                    inside = (iouSeat(each_seat.rect, o.rect) > impl_->cfg.iou_seat_intersect);
+                }
                 if (inside) {
                     sfs.object_boxes_in_roi.push_back(o);
                     sfs.object_conf_max = std::max(sfs.object_conf_max, o.conf);
                 }
+            }
+            // 前景占比：多边形优先
+            if (use_poly) {
+                sfs.fg_ratio = Mog2Manager::ratioInPoly(fg_mask, each_seat.poly);
+            } else {
+                sfs.fg_ratio = impl_->mog2.ratioInRoi(fg_mask, each_seat.rect);
             }
             sfs.person_count = static_cast<int>(sfs.person_boxes_in_roi.size());
             sfs.object_count = static_cast<int>(sfs.object_boxes_in_roi.size());
@@ -162,9 +204,18 @@ namespace vision {
             sfs.has_object = sfs.object_count > 0 && sfs.object_conf_max >= impl_->cfg.conf_thres_object;  // 有物 = 物数 > 0 and conf > conf_thres_object
 
             // occupancy rule: has_person => OCCUPIED, else if has_object => OBJECT_ONLY, else EMPTY
-            if (sfs.has_person) sfs.occupancy_state = SeatOccupancyState::PERSON;
-            else if (sfs.has_object) sfs.occupancy_state = SeatOccupancyState::OBJECT_ONLY;
-            else sfs.occupancy_state = SeatOccupancyState::FREE;
+            if (sfs.has_person) {
+                sfs.occupancy_state = SeatOccupancyState::PERSON;
+            } else if (sfs.has_object) {
+                sfs.occupancy_state = SeatOccupancyState::OBJECT_ONLY;
+            } else {
+                // 使用前景兜底：若无检测但前景占比超过阈值，标记为 OBJECT_ONLY（可能有人低头/遮挡）
+                if (sfs.fg_ratio >= impl_->cfg.mog2_fg_ratio_thres) {
+                    sfs.occupancy_state = SeatOccupancyState::OBJECT_ONLY;
+                } else {
+                    sfs.occupancy_state = SeatOccupancyState::FREE;
+                }
+            }
 
             out.push_back(std::move(sfs));
         }
