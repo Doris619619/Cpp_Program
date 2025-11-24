@@ -68,6 +68,9 @@ target_link_libraries(frame_extract PRIVATE vision)
 add_executable(annotate_seat_states apps/annotate_seat_states.cpp)
 target_link_libraries(annotate_seat_states PRIVATE vision opencv_highgui)
 
+add_executable(annotate_person apps/annotate_person.cpp)
+target_link_libraries(annotate_person PRIVATE vision opencv_highgui)
+
 
 # ---- ONNX Runtime 本地回退方案（不依赖 vcpkg 时启用） ----
 # 若上面的 find_package 没有找到 onnxruntime 目标，则尝试从 thirdparty/onnxruntime 以导入库方式链接
