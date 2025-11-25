@@ -21,6 +21,9 @@ public:
 
     void setPublisher(Publisher* p); // 不持有 not set yet
 
+    // 新增: 返回座位数量，避免为了统计而进行一次推理
+    int seatCount() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -1,6 +1,6 @@
 # Vision configuration file
 seats_json: "config/poly_simple_seats.json"
-model_path: "data/models/yolov8n_640.onnx"
+model_path: "data/models/person01.onnx"  # fine-tuned single-class person model
 vision_yaml: "config/vision.yml"
 log_dir: "logs"
 snapshot_dir: "cache/snap"

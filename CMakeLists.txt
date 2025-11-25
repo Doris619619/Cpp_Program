@@ -19,17 +19,19 @@ find_package(yaml-cpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
 # head file path
-include_directories(
-  ./include/vision/Config.h
-  ./include/vision/Types.h
-  ./include/vision/VisionA.h
-  ./include/vision/OrtYolo.h
-  ./include/vision/Enums.h
-  ./include/vision/SeatRoi.h
-  ./include/vision/Mog2.h
-  ./include/vision/Snapshotter.h
-  ./include/vision/Publish.h
-)
+#include_directories(
+#  ./include/vision/Config.h
+#  ./include/vision/Types.h
+#  ./include/vision/VisionA.h
+#  ./include/vision/OrtYolo.h
+#  ./include/vision/Enums.h
+#  ./include/vision/SeatRoi.h
+#  ./include/vision/Mog2.h
+#  ./include/vision/Snapshotter.h
+#  ./include/vision/Publish.h
+#)
+# 仅添加头文件所在目录（之前误把具体 .h 文件当目录会导致编译器搜索异常）
+include_directories(${CMAKE_SOURCE_DIR}/include)
 
 add_library(vision
   src/vision/Config.cpp

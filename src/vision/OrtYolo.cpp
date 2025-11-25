@@ -26,9 +26,13 @@ namespace vision {
         std::wstring model_path_w(opt_.model_path.begin(), opt_.model_path.end());
         
         // create session instance (managed by unique_ptr, auto-destroyed with object)
-        session_ = std::make_unique<Ort::Session>(env_, model_path_w.c_str(), session_options_);
-        
-        ready_ = true;
+        try {
+            session_ = std::make_unique<Ort::Session>(env_, model_path_w.c_str(), session_options_);
+            ready_ = true;
+        } catch (const std::exception& ex) {
+            std::cerr << "[OrtYoloDetector] Failed to create ONNX session: " << ex.what() << "\n";
+            ready_ = false; // remain not ready; infer() will return empty
+        }
     }
 
     // OrtYoloDetector destructor: implemented in header

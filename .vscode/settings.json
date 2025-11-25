@@ -4,7 +4,10 @@
         "xstring": "cpp",
         "memory": "cpp",
         "functional": "cpp",
-        "type_traits": "cpp"
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "filesystem": "cpp",
+        "iosfwd": "cpp"
     },
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",

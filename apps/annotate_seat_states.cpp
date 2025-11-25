@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
             imgIdx++;
             if (imgIdx >= (int)images.size()) { std::cout << "Done." << std::endl; break; }
             needRedraw = true;
-        } else if (k == '1' || k=='2' || k==ss'3' || k=='4') {
+        } else if (k == '1' || k=='2' || k=='3' || k=='4') {
             if (selectedIndex >=0 && selectedIndex < (int)current.size()) {
                 current[selectedIndex].state = fromKey(k, current[selectedIndex].state);
             }

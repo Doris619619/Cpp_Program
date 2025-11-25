@@ -6,6 +6,7 @@
 #include "vision/Config.h"
 #include "vision/OrtYolo.h"
 #include "vision/Mog2.h"
+#include "vision/Snapshotter.h"
 #include <opencv2/imgproc.hpp>
 #include <fstream>
 #include <chrono>
@@ -15,16 +16,16 @@ namespace vision {
     struct VisionA::Impl {
         VisionConfig cfg;                   // configurator &cfg
         std::vector<SeatROI> seats;
-        OrtYoloDetector detector{ OrtYoloDetector::SessionOptions{ // struct session_options
-            "data/models/yolov8n_640.onnx", // model path
-            640,                            // input_w
-            640,                            // input_h
-            false                           // fake_infer = false 启用真实推理
+        std::unique_ptr<OrtYoloDetector> detector; // 延后构造以使用 cfg.model_path
+        Mog2Manager mog2{ Mog2Config{ 
+            cfg.mog2_history, 
+            cfg.mog2_var_threshold, 
+            cfg.mog2_detect_shadows 
         } };
-        Mog2Manager mog2{ Mog2Config{ cfg.mog2_history, cfg.mog2_var_threshold, cfg.mog2_detect_shadows } };
         // 存储最后一帧的所有检测结果
         std::vector<BBox> last_persons;
         std::vector<BBox> last_objects;
+        std::unique_ptr<Snapshotter> snapshotter; // 快照器
         struct SizeParseResult {
             cv::Mat img;
             float scale;
@@ -56,9 +57,28 @@ namespace vision {
     {
         impl_->cfg = cfg;
         loadSeatsFromJson(cfg.seats_json, impl_->seats);
+        
+        // 构造检测器
+        impl_->detector.reset(new OrtYoloDetector(OrtYoloDetector::SessionOptions{
+            cfg.model_path,
+            cfg.input_w,
+            cfg.input_h,
+            false
+        }));
+        // 初始化快照策略
+        SnapshotPolicy policy;
+        policy.min_interval_ms = cfg.snapshot_min_interval_ms;
+        policy.on_change_only  = cfg.snapshot_on_change_only;
+        policy.heartbeat_ms    = cfg.snapshot_heartbeat_ms;
+        policy.jpg_quality     = cfg.snapshot_jpg_quality;
+        impl_->snapshotter.reset(new Snapshotter(cfg.snapshot_dir, policy));
     }
 
     VisionA::~VisionA() = default;
+
+    int VisionA::seatCount() const {
+        return static_cast<int>(impl_->seats.size());
+    }
 
     std::vector<SeatFrameState> VisionA::processFrame(const cv::Mat& bgr, 
                                                       int64_t ts_ms, 
@@ -78,7 +98,18 @@ namespace vision {
         auto parsed_img = sizeParseRes.img;
 
         // 2. 推理: chg RawDet -> BBox
-        auto raw_detected = impl_->detector.infer(parsed_img);
+        std::vector<RawDet> raw_detected;
+        try {
+            raw_detected = impl_->detector->infer(parsed_img);
+        } catch (const std::exception& ex) {
+            // 捕获 ONNX/推理异常，打印一次并继续返回空检测，避免整个程序退出
+            static bool warned = false;
+            if (!warned) {
+                std::cerr << "[VisionA] infer exception: " << ex.what() << "\n";
+                warned = true;
+            }
+            raw_detected.clear();
+        }
         std::vector<BBox> dets;
         dets.reserve(raw_detected.size());
         for (auto& r : raw_detected) {
@@ -217,6 +248,26 @@ namespace vision {
                 }
             }
 
+            // 快照策略: 使用 occupancy_state + person/object count 生成状态哈希
+            if (impl_->snapshotter) {
+                int state_hash = static_cast<int>(sfs.occupancy_state) * 100 + sfs.person_count * 10 + sfs.object_count;
+                // 选择用于绘制的框集合（优先人，其次物）
+                std::vector<cv::Rect> snap_boxes;
+                if (!sfs.person_boxes_in_roi.empty()) {
+                    for (auto &b : sfs.person_boxes_in_roi) snap_boxes.push_back(b.rect);
+                } else if (!sfs.object_boxes_in_roi.empty()) {
+                    for (auto &b : sfs.object_boxes_in_roi) snap_boxes.push_back(b.rect);
+                } else {
+                    snap_boxes.push_back(sfs.seat_roi); // 无检测时使用座位 ROI
+                }
+                std::string snap_path = impl_->snapshotter->maybeSave(
+                    std::to_string(sfs.seat_id),
+                    state_hash,
+                    ts_ms,
+                    bgr,
+                    snap_boxes);
+                sfs.snapshot_path = snap_path;
+            }
             out.push_back(std::move(sfs));
         }
         auto t1 = std::chrono::high_resolution_clock::now();
