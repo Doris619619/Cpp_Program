@@ -16,7 +16,13 @@
     <ClCompile Include="D:\CSC3002\Library_System\src\student_app\student_window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\CSC3002\Library_System\src\student_app\navigation_canvas.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\CSC3002\Library_System\src\admin_app\admin_window.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\CSC3002\Library_System\src\widgets\card_dialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="D:\CSC3002\Library_System\build\Library_System_autogen\mocs_compilation_Release.cpp">
@@ -30,9 +36,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="D:\CSC3002\Library_System\include\seatui\admin\admin_window.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="D:\CSC3002\Library_System\include\seatui\launcher\login_window.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -40,6 +43,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\CSC3002\Library_System\include\seatui\student\student_window.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\CSC3002\Library_System\include\seatui\student\navigation_canvas.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\CSC3002\Library_System\include\seatui\admin\admin_window.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\CSC3002\Library_System\include\seatui\widgets\card_dialog.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

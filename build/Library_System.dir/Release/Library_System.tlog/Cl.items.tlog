@@ -2,5 +2,7 @@ D:\CSC3002\Library_System\src\launcher_app\main.cpp;D:\CSC3002\Library_System\bu
 D:\CSC3002\Library_System\src\launcher_app\login_window.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\login_window.obj
 D:\CSC3002\Library_System\src\launcher_app\role_selector.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\role_selector.obj
 D:\CSC3002\Library_System\src\student_app\student_window.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\student_window.obj
+D:\CSC3002\Library_System\src\student_app\navigation_canvas.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\navigation_canvas.obj
 D:\CSC3002\Library_System\src\admin_app\admin_window.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\admin_window.obj
+D:\CSC3002\Library_System\src\widgets\card_dialog.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\card_dialog.obj
 D:\CSC3002\Library_System\build\Library_System_autogen\mocs_compilation_Release.cpp;D:\CSC3002\Library_System\build\Library_System.dir\Release\mocs_compilation_Release.obj

@@ -2,4 +2,6 @@
 #include <CPCONPL5WA/moc_admin_window.cpp>
 #include <3KNPY22ZCX/moc_login_window.cpp>
 #include <3KNPY22ZCX/moc_role_selector.cpp>
+#include <JGWXUBBFSW/moc_navigation_canvas.cpp>
 #include <JGWXUBBFSW/moc_student_window.cpp>
+#include <M4KVM4NFKN/moc_card_dialog.cpp>

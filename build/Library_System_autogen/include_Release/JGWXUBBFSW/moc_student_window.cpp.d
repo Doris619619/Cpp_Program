@@ -1,4 +1,9 @@
 D:/CSC3002/Library_System/build/Library_System_autogen/include_Release/JGWXUBBFSW/moc_student_window.cpp: D:/CSC3002/Library_System/include/seatui/student/student_window.hpp \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/QFlags \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/QSharedDataPointer \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/QString \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/QUrl \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/QVariant \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/q20functional.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/q20memory.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/q20type_traits.h \
@@ -17,6 +22,7 @@ D:/CSC3002/Library_System/build/Library_System_autogen/include_Release/JGWXUBBFS
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qbytearrayalgorithms.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qbytearrayview.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcalendar.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qchar.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcompare.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -28,8 +34,10 @@ D:/CSC3002/Library_System/build/Library_System_autogen/include_Release/JGWXUBBFS
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcontainerinfo.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcontainertools_impl.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcontiguouscache.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qcryptographichash.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qdarwinhelpers.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qdatastream.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qdatetime.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qdebug.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qendian.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qexceptionhandling.h \
@@ -43,12 +51,14 @@ D:/CSC3002/Library_System/build/Library_System_autogen/include_Release/JGWXUBBFS
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qglobalstatic.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qhash.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qhashfunctions.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qiodevice.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qiodevicebase.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qiterable.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qiterator.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qline.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qlist.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qlocale.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qlogging.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qmalloc.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qmap.h \
@@ -110,6 +120,7 @@ D:/CSC3002/Library_System/build/Library_System_autogen/include_Release/JGWXUBBFS
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qtversionchecks.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qtypeinfo.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qtypes.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qurl.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qutf8stringview.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qvariant.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
@@ -129,22 +140,54 @@ D:/CSC3002/Library_System/build/Library_System_autogen/include_Release/JGWXUBBFS
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qkeysequence.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qpaintdevice.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qpalette.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qpen.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qpixelformat.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qpixmap.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qpolygon.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qregion.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qrgb.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qrgba64.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtextcursor.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtextdocument.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtextformat.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtextoption.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtgui-config.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtguiexports.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtguiglobal.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qtransform.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qwindowdefs.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtGui/qwindowdefs_win.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/QAbstractSocket \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/QNetworkProxy \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/QNetworkRequest \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/QSslConfiguration \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/QSslError \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qabstractsocket.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qhostaddress.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qnetworkproxy.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qnetworkrequest.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qssl.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qsslcertificate.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qsslconfiguration.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qsslerror.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qsslsocket.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qtcpsocket.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qtnetwork-config.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qtnetworkexports.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtNetwork/qtnetworkglobal.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWebSockets/QWebSocket \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWebSockets/qtwebsocketsexports.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWebSockets/qwebsocket.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWebSockets/qwebsocketprotocol.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWebSockets/qwebsockets_global.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/QMainWindow \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/QTextEdit \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qabstractscrollarea.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qframe.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qmainwindow.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qsizepolicy.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qtabwidget.h \
+  D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qtextedit.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qtwidgets-config.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qtwidgetsexports.h \
   D:/app/qt2/6.7.3/msvc2022_64/include/QtWidgets/qtwidgetsglobal.h \

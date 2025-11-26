@@ -12,3 +12,7 @@ signals:
     void openStudent();
     void openAdmin();
 };
+
+
+
+

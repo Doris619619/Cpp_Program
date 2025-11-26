@@ -25,3 +25,6 @@ private:
     QLineEdit* pass_;
     QLabel*    msg_;
 };
+
+
+
