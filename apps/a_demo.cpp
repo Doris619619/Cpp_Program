@@ -16,7 +16,7 @@ int main() {
 #include "vision/VisionA.h"
 #include "vision/Publish.h"
 #include "vision/Config.h"
-#include "vision/FrameExtractor.h"
+#include "vision/FrameProcessor.h"
 #include <opencv2/opencv.hpp>
 #include <filesystem>
 #include <iostream>
@@ -32,69 +32,7 @@ int64_t now_ms() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-/* onFrame 
 
-  @param frame_index         current frame index  
-  @param bgr:                current frame image in BGR format
-  @param t_sec:              current frame timestamp in seconds
-  @param now_ms:             current system time in milliseconds
-  @param input_path:         path of the input image or video
-  @param video_src_path:     source path of the video file
-  @param ofs:                output file stream for recording annotated frames
-  @param cfg:                configuration settings for vision processing
-  @param vision:             instance of VisionA for processing frames
-  @param latest_frame_file:  path to the file storing the latest frame information
-  @param processed:          reference to a counter for processed frames
-
-  @note Logic
-  @note - process frame by vision.processFrame() and receive the state
-  @note - based on the state, output the content in the cli
-  @note - DO NOT conduct visualization here, hand it over to the other method
-  @note - record annotated frame and output in the jsonl file
-  @note - DO NOT responsible for judging whether to save-in-disk, return bool for handled or not
-*/
-bool static onFrame(
-    int frame_index, 
-    const cv::Mat& bgr, 
-    double /*t_sec*/, 
-    int64_t now_ms,
-    const std::filesystem::path& input_path,
-    const std::string& video_src_path,
-    std::ofstream& ofs,
-    const VisionConfig& cfg,
-    VisionA& vision,
-    const std::string& latest_frame_file,
-    size_t& processed
-) {
-    // process frame
-    auto states = vision.processFrame(bgr, now_ms, frame_index++);
-
-    // output in CLI
-    int64_t ts = states.empty() ? now_ms : states.front().ts_ms;
-    for (auto &s : states) {
-        std::cout << s.seat_id << " " << toString(s.occupancy_state)
-                  << " pc = " << s.person_conf_max
-                  << " oc = " << s.object_conf_max
-                  << " fg = " << s.fg_ratio
-                  << " snap = " << (s.snapshot_path.empty() ? "-" : s.snapshot_path)
-                  << "\n";
-    }
-
-    // record annotated frame
-    auto stem = input_path.stem().string();
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "%s_%06d.jpg", stem.c_str(), frame_index);
-    std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / buf).string();
-    //cv::imwrite(annotated_path, vis);
-    std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, video_src_path, annotated_path);
-    ofs << line << "\n";
-    {
-        std::ofstream lf(latest_frame_file, std::ios::trunc);
-        if (lf) lf << line << "\n";
-    }
-    ++processed;
-    return true;
-}
 
 int main(int argc, char** argv) {
     // CLI args settings (parts)
@@ -118,14 +56,30 @@ int main(int argc, char** argv) {
         } else if (arg == "--stream" && i + 1 < argc) {// --stream                    // set stream video mode
             try { stream_video = static_cast<bool>(std::stoi(argv[++i])); } catch (...) { std::cerr << "Error in arg --stream\n"; }
         } else if (arg == "-h" || arg == "--help") {   // --help                      // help
-            std::cout << "Usage: a_demo [input_path] [--out states.jsonl] [--max N] [--fps F] [--stream false/true]\n";
+            std::cout << "\n"
+                      << "Usage: a_demo [input_path] [--out states.jsonl] [--max N] [--fps F] [--stream false/true]\n"
+                      << "Or:    a_demo -h \n"
+                      << "       a_demo --help \n"
+                      << "for help.\n"
+                      << "For file type, if pure images are to be processed, fill the \"--out\" term with the directory to the images; otherwise, fill in the video(.mp4) relative to current CWD, with .mp4 postfix ending. \n"
+                      << "For the image processing mode, fill the \"--fps\" term with number of images you want to process per 100 images in the directory. (20 fp100 is recommended, which is also the default setting.)\n"
+                      << "For the video processing mode, fill the \"--fps\" term with the desired extraction framerate (e.g. 2.0 for 2 frames per second)(the lower the fps is, the less frame it will extract and process from one second of video, and thus less stressful for the program to work.)\n"
+                      << "For video input mode, to process video without intermediate frame extraction to disk, set \"--stream true\". Otherwise, \"--stream false\" will start the bulk extraction process.\n"
+                      << "For maximum process frames, set \"--max N\" with N as the upper limit of frames to be processed. \n\n";
             return 0;
         } else if (arg.rfind("--", 0) == 0) {          // --                          // unknown option, Error occurs
-            std::cerr << "Unknown option: " << arg << "\n";
+            std::cerr << "Unknown option: " << arg << "\n"
+                      << "Usage: a_demo [input_path or video.mp4] [--out path/to/states.jsonl] [--max N] [--fps F] [--stream false/true]\n"
+                      << "Or:    a_demo -h \n"
+                      << "       a_demo --help \n"
+                      << "for help.\n";
         //} else if (img_dir == "data/frames") {         // 第一个非选项参数视为输入路径
         //    img_dir = arg;
         } else if (override_out_states.empty()) {
-            override_out_states = arg; // 兼容旧的第二位置参数
+            override_out_states = arg;                 // 兼容旧的第二位置参数
+            if (!std::filesystem::is_directory(override_out_states)) { // in case if not a directory provided
+                override_out_states = "runtime/seat_states.jsonl";
+            }
         }
     }
 
@@ -202,11 +156,11 @@ int main(int argc, char** argv) {
     int annotated_save_cnt = 0;
     int annotated_save_freq = cfg.annotated_save_freq;
     try {    
-        auto input_path = std::filesystem::path(img_dir);
+        auto input_path = std::filesystem::path(img_dir); // here the input_path can be video file or directory of img
         
         // Images Processing (Directly, NO Extraction)
         if (std::filesystem::is_directory(input_path)) {  // process frame from img directory
-            std::cout << "Directory mode. Iterating files...\n";
+            std::cout << "Image directory mode. Iterating files...\n";
             
             // use directory iterator to iterate the files / folders
             for (auto &entry : std::filesystem::directory_iterator(input_path)) {    
@@ -315,8 +269,9 @@ int main(int argc, char** argv) {
             }
         
         } else {// Video Processing
-            // here the input_path is video file
-            if (stream_video) { // streaming video: Extract and Process Frame-by-Frame from Video
+            
+            // Streaming Process video: Extract and Process Frame-by-Frame from Video
+            if (stream_video) { 
                 /* Note: Here the iterate func. will conduct the extraction,
                     onFrame is only an arg which has a type of boolean func. here.
                     The onFrame func. is implemented here, and the iterate func. is
@@ -331,10 +286,11 @@ int main(int argc, char** argv) {
                 size_t processed = 0;
 
                 // iterate over the video to extract & process frames 1-by-1
-                FrameExtractor::streamProcess(
+                FrameProcessor::streamProcess(
                     src_path,                                                         // video path
                     [&](int frame_idx, const cv::Mat& bgr, double /*tsec*/) -> bool { // conduct onFrame process
-                        return onFrame(frame_index, 
+                        return FrameProcessor::onFrame(
+                                        frame_idx,
                                         bgr, 
                                         /*t_sec*/0.0, 
                                         now_ms(), 
@@ -404,12 +360,9 @@ int main(int argc, char** argv) {
             
             } else { /* Extract frames from video then process frames in directory
                 
-            
-
-            
-
-            
             */
+
+
             }
 
             // 视频：先提取帧到 data/frames/frames_vNNN，再统一按目录流程处理
@@ -438,7 +391,7 @@ int main(int argc, char** argv) {
             size_t processed_frames = 0;
             if (stream_video) {
                 // 直接迭代视频帧
-                FrameExtractor::streamProcess(
+                FrameProcessor::streamProcess(
                     input_path.string(),
                     [&](int frameIdx, const cv::Mat& bgr, double /*tsec*/) -> bool {
                         if (bgr.empty()) return true;
@@ -508,7 +461,7 @@ int main(int argc, char** argv) {
                 );
             } else {
                 // 先抽帧到目录再统一处理
-                size_t saved = FrameExtractor::extractToDir(input_path.string(), extractDir.string(), extract_fps, 95);
+                size_t saved = FrameProcessor::extractToDir(input_path.string(), extractDir.string(), extract_fps, 95);
                 std::cout << "Extracted " << saved << " frames from video." << "\n";
                 
                 

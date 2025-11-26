@@ -44,7 +44,7 @@ add_library(vision
   src/vision/Snapshotter.cpp
   src/vision/Publish.cpp
   src/vision/Logging.cpp
-  src/vision/FrameExtractor.cpp
+  src/vision/FrameProcessor.cpp
 )
 target_include_directories(vision PUBLIC include)
 target_link_libraries(vision
