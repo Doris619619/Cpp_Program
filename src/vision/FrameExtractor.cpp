@@ -8,19 +8,19 @@ namespace fs = std::filesystem;
 namespace vision {
 
 static double safe_fps(cv::VideoCapture& cap) {
-    double fps = cap.get(cv::CAP_PROP_FPS);
-    if (fps < 1e-3 || std::isnan(fps)) return 0.0;
-    else if (fps > 2.0) return 2.0; // cap the fps to 2.0 to avoid too dense sampling
-    return fps;
+    double original_fps = cap.get(cv::CAP_PROP_FPS);  // video original fps
+    if (original_fps < 1e-3 || std::isnan(original_fps)) return 0.0;
+    else if (original_fps > 2.0)                         return 2.0; // cap the fps to 2.0 to avoid too dense sampling
+    return original_fps;
 }
 
-bool FrameExtractor::iterate(
+// Stream Processing Video
+bool FrameExtractor::streamProcess(
     const std::string& video_path,
-    const std::function<bool(int, const cv::Mat&, double)> &onFrame,  // callback func., truncate sampling if return false
+    const std::function<bool(int, const cv::Mat&, double)> &onFrame_, // callback func., truncate sampling if return false
     double sample_fps,                                                // sampling_freq
     int start_frame,                                                  // first_frame index = 0
-    int end_frame,                                                    // end_frame index = -1 (the ending frame)
-    bool stream_video                                                 // whether stream the video
+    int end_frame                                                     // end_frame index = -1 (the ending frame)
 ) {
     /* logic draft
         iterate will extract frames from video derived from the path;
@@ -66,50 +66,76 @@ bool FrameExtractor::iterate(
 
     */
     
+    // frame capturer initialization
     cv::VideoCapture cap(video_path);
     if (!cap.isOpened()) {
         std::cerr << "[FrameExtractor] Failed to open video: " << video_path << "\n";
         return false;
     }
 
-    // derive frame range and set start accordingly
-    int totalFrames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
-    if (end_frame < 0 && totalFrames > 0) end_frame = totalFrames - 1;
-    if (start_frame > 0) cap.set(cv::CAP_PROP_POS_FRAMES, start_frame);
+    // derive frame args
+    const double original_fps = cap.get(cv::CAP_PROP_FPS);
+    int original_total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
+    int t_ori_spf = static_cast<int>(1 / original_fps);
+    if (end_frame < 0 && original_total_frames > 0) end_frame = original_total_frames - 1;                          
 
-    const double fps = safe_fps(cap);
+    // sample args setting
     const bool do_sample = (sample_fps > 0.0);
-    const double sample_interval = do_sample ? (1.0 / sample_fps) : 0.0;// sampleing interval = 1 / f
-    double next_sample_T = 0.0;                                         // next sampling time seconds thresh
+    int sample_stepsize = static_cast<int>(do_sample ? (sample_fps >= original_fps ? original_fps * 5 : 1.0 / sample_fps) : 0.0); // sampleing interval = 1 / f
+    double t_next_sample = 0.0;                                         // next sampling time thresh (seconds)
+    int sample_cnt_ub = 0;
 
-    if (stream_video) { // streaming video: Extract and Process Frame-by-Frame from Video
-        int idx = start_frame;
-        for (;;) {
-            cv::Mat bgr;
-            if (!cap.read(bgr)) {  // EOF
-                std::cerr << "[FrameExtractor] Reached end of video or read error at frame index " << idx << "\n";
-                break; 
-            }
-
-            // derive timestamp ms and s (sec)
-            double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
-            double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (fps > 0.0 ? (static_cast<double>(idx) / fps) : 0.0);
-
-            bool take = !do_sample;   // if not do sampling, check every time
-            if (!take) {              // if starts sampling, take = true iff. 
-                if (t_sec + 1e-9 >= next_sample_T) {  // sample only if current time exceeds next_sample_T
-                    take = true;
-                    while (next_sample_T <= t_sec) next_sample_T += sample_interval; // skip accumulated thresh, avoid miss-sampling
-                }
-            }
-            if (take) {
-                if (!onFrame(idx, bgr, t_sec)) break;
-            }
-            if (end_frame >= 0 && idx >= end_frame) break;
-            ++idx;
-        }
+    // sampling fps safety check
+    if (original_total_frames > 6000) {
+        sample_cnt_ub = 600;
+        sample_stepsize = std::max(sample_stepsize, static_cast<int>(original_total_frames / sample_cnt_ub));
+    } else if (original_total_frames > 4000) {
+        sample_cnt_ub = static_cast<int>(original_total_frames / 20) + 1;
+        sample_stepsize = std::max(sample_stepsize, static_cast<int>(original_total_frames / sample_cnt_ub));
+    } else if (original_total_frames > 1000) {
+        sample_cnt_ub = static_cast<int>(original_total_frames / 50) + 1;
+        sample_stepsize = std::max(sample_stepsize, static_cast<int>(original_total_frames / sample_cnt_ub));
+    } else if (original_total_frames > 200) {
+        sample_cnt_ub = static_cast<int>(original_total_frames / 20) + 1;
+        sample_stepsize = std::max(sample_stepsize, static_cast<int>(original_total_frames / sample_cnt_ub));
+    } else {
+        sample_cnt_ub = original_total_frames;
+        sample_stepsize = std::max(sample_stepsize, static_cast<int>(original_total_frames / sample_cnt_ub));
     }
 
+    // streaming video: Extract and Process Frame-by-Frame from Video
+    for (int idx = start_frame, sample_cnt = 0; idx < original_total_frames, sample_cnt < sample_cnt_ub; idx += sample_stepsize, sample_cnt++) {
+        
+        // skip-sampling
+        cap.set(cv::CAP_PROP_POS_FRAMES, idx); // skip frames according to stepsize
+
+        // read-in frame
+        cv::Mat bgr;  // in loop, everytime call cap.read(bgr), it will automatically move to next frame
+        if (!cap.read(bgr)) {  // EOF
+            std::cerr << "[FrameExtractor] Reached end of video or read error at frame index " << idx << "\n";
+            break; 
+        }
+
+        // derive current timestamp ms and s (sec)
+        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
+        double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (original_fps > 0.0 ? (static_cast<double>(idx) / original_fps) : 0.0);
+
+        // process frame
+        if (!onFrame_(idx, bgr, t_sec)) {
+            std::cerr << "[FrameExtractor] onFrame_ callback requested termination at frame index " << idx << "\n";
+            break;
+        }
+
+        // ending check
+        if (end_frame >= 0 && idx >= end_frame) break;
+
+        // sample saving logic
+        /* not urgent */
+    }
+
+    return true;
+
+    /*  old logic 
     //// y onFrame used
     int idx = start_frame;
     for (;;) {
@@ -119,13 +145,13 @@ bool FrameExtractor::iterate(
             break; // EOF
         }
         double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
-        double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (fps > 0.0 ? (static_cast<double>(idx) / fps) : 0.0);
+        double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (oringinal_fps > 0.0 ? (static_cast<double>(idx) / oringinal_fps) : 0.0);
 
         bool take = !do_sample;
         if (!take) {
-            if (t_sec + 1e-9 >= next_sample_T) {
+            if (t_sec + 1e-9 >= t_next_sample) {
                 take = true;
-                while (next_sample_T <= t_sec) next_sample_T += sample_interval;
+                while (t_next_sample <= t_sec) t_next_sample += sample_stepsize;
             }
         }
         if (take) {
@@ -134,7 +160,7 @@ bool FrameExtractor::iterate(
         if (end_frame >= 0 && idx >= end_frame) break;
         ++idx;
     }
-    return true;
+    */
 }
 
 size_t FrameExtractor::extractToDir(
@@ -157,7 +183,7 @@ size_t FrameExtractor::extractToDir(
     std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 
                                 std::clamp(jpeg_quality, 1, 100) };
 
-    iterate(
+    streamProcess(
         video_path,
         [&](int frame_idx, const cv::Mat& bgr, double /*t_sec*/) -> bool {
             std::ostringstream oss;
@@ -176,6 +202,36 @@ size_t FrameExtractor::extractToDir(
 
     return saved;
 }
+
+// extract frames and return single cv::Mat
+cv::Mat FrameExtractor::extractFrame(
+    const std::string& video_path,
+    int target_frame_idx
+) {
+    cv::VideoCapture cap(video_path);
+    if (!cap.isOpened()) {  // open failed
+        std::cerr << "[FrameExtractor] extractFrame open failed: " << video_path << "\n";
+        return cv::Mat();
+    }
+    int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
+    if (target_frame_idx < 0 || (total_frames > 0 && target_frame_idx >= total_frames)) {  // invalid target index
+        std::cerr << "[FrameExtractor] extractFrame invalid target frame index: " << target_frame_idx << "\n";
+        return cv::Mat();
+    }
+    
+    // seek to target frame
+    cap.set(cv::CAP_PROP_POS_FRAMES, target_frame_idx);
+    cv::Mat frame;
+    if (!cap.read(frame)) {  // read failed
+        std::cerr << "[FrameExtractor] extractFrame read failed at frame index " << target_frame_idx << "\n";
+        return cv::Mat();
+    }
+    return frame;
+}
+
+// what's t_sec and now_ms? diff? 
+
+
 
 } // namespace vision
 
@@ -286,3 +342,156 @@ bool fetchFramesByOriginalIndices(const std::string& video_path,
 }
 
 } // end extra namespace vision block
+
+// =============================== 新增: 单帧提取与包装流式/批量处理 ===============================
+// 说明: 依据用户在文件中的笔记需求, 我们不修改既有代码与注释,
+// 仅在此追加新的 helper 与包装方法, 命名与变量风格遵循用户约定。
+
+namespace vision {
+
+// 单帧提取 helper: 通过原视频帧号读取一帧并返回
+// video_path: 原视频路径
+// frame_index: 目标原始帧号 (>=0)
+// out_bgr: 输出 BGR 图像
+// 返回: 是否读取成功
+bool extractSingleFrame(const std::string& video_path, int frame_index, cv::Mat& out_bgr) {
+    out_bgr.release();
+    cv::VideoCapture cap(video_path);
+    if (!cap.isOpened()) {
+        std::cerr << "[FrameExtractor] extractSingleFrame open failed: " << video_path << "\n";
+        return false;
+    }
+    int target = frame_index < 0 ? 0 : frame_index;
+    cap.set(cv::CAP_PROP_POS_FRAMES, target);
+    cv::Mat bgr;
+    if (!cap.read(bgr)) {
+        std::cerr << "[FrameExtractor] extractSingleFrame read failed at frame " << target << "\n";
+        return false;
+    }
+    out_bgr = bgr;
+    return true;
+}
+
+// 流式处理包装: 使用单帧提取 helper, 然后交给 onFrame
+// 注意: 不修改原阈值/采样设定; 只调用现有的采样频率变量约定 (由调用侧传入)
+// 参数:
+// - video_path: 原视频
+// - onFrame: 与现有 iterate 相同签名的回调 (idx, bgr, t_sec)
+// - sample_fps: 采样频率 (<=0 表示每帧)
+// - start_frame, end_frame: 起止原始帧号, 与现有语义一致
+// 返回: 处理的帧数
+size_t streamProcess(const std::string& video_path,
+                               //const std::function<bool(int, const cv::Mat&, double)>& onFrame,
+                               bool static onFrame(
+                                int frame_index, 
+                                const cv::Mat& bgr, 
+                                double /*t_sec*/, 
+                                int64_t now_ms,
+                                const std::filesystem::path& input_path,
+                                const std::string& video_src_path,
+                                std::ofstream& ofs,
+                                const VisionConfig& cfg,
+                                VisionA& vision,
+                                const std::string& latest_frame_file,
+                                size_t& processed)
+                               double sample_fps,
+                               int start_frame,
+                               int end_frame) {
+    cv::VideoCapture cap(video_path);
+    if (!cap.isOpened()) {
+        std::cerr << "[FrameExtractor] streamProcess open failed: " << video_path << "\n";
+        return 0;
+    }
+    double raw_fps = cap.get(cv::CAP_PROP_FPS);
+    bool do_sample = sample_fps > 0.0;
+    double sample_interval = do_sample ? (1.0 / sample_fps) : 0.0;
+    double next_sample_t = 0.0;
+
+    int idx = start_frame < 0 ? 0 : start_frame;
+    size_t processed = 0;
+    for (;;) {
+        if (end_frame >= 0 && idx > end_frame) break;
+        // 单帧提取
+        cv::Mat bgr;
+        if (!extractSingleFrame(video_path, idx, bgr)) break;
+        // 时间戳 (优先 POS_MSEC, 否则 idx/raw_fps)
+        cap.set(cv::CAP_PROP_POS_FRAMES, idx);
+        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
+        double t_sec = (!std::isnan(t_ms) && t_ms > 0.0) ? (t_ms / 1000.0)
+                        : ((raw_fps > 0.0) ? (static_cast<double>(idx) / raw_fps) : 0.0);
+
+        bool take = !do_sample;
+        if (!take) {
+            if (t_sec + 1e-9 >= next_sample_t) {
+                take = true;
+                while (next_sample_t <= t_sec) next_sample_t += sample_interval;
+            }
+        }
+        if (take) {
+            ++processed;
+            if (!onFrame(
+    int frame_index, 
+    const cv::Mat& bgr, 
+    double /*t_sec*/, 
+    int64_t now_ms,
+    const std::filesystem::path& input_path,
+    const std::string& video_src_path,
+    std::ofstream& ofs,
+    const VisionConfig& cfg,
+    VisionA& vision,
+    const std::string& latest_frame_file,
+    size_t& processed)) break;
+        }
+        ++idx;
+    }
+    return processed;
+}
+
+// 批量处理包装: 按采样频率批量选择原始帧号, 用单帧 helper 读取后再 onFrame
+// 注意: 计算机内存/IO 限制, 此方法逐帧读取并立即回调, 不做大规模缓冲; 不修改原阈值
+// 参数与返回与上面一致
+size_t bulkExtractWithSampling(const std::string& video_path,
+                               const std::function<bool(int, const cv::Mat&, double)>& onFrame,
+                               double sample_fps,
+                               int start_frame,
+                               int end_frame) {
+    cv::VideoCapture cap(video_path);
+    if (!cap.isOpened()) {
+        std::cerr << "[FrameExtractor] bulkExtractWithSampling open failed: " << video_path << "\n";
+        return 0;
+    }
+    double raw_fps = cap.get(cv::CAP_PROP_FPS);
+    bool do_sample = sample_fps > 0.0;
+    double sample_interval = do_sample ? (1.0 / sample_fps) : 0.0;
+    double next_sample_t = 0.0;
+
+    int idx = start_frame < 0 ? 0 : start_frame;
+    size_t processed = 0;
+    for (;;) {
+        if (end_frame >= 0 && idx > end_frame) break;
+        // 单帧提取
+        cv::Mat bgr;
+        if (!extractSingleFrame(video_path, idx, bgr)) break;
+        // 时间戳 (优先 POS_MSEC, 否则 idx/raw_fps)
+        cap.set(cv::CAP_PROP_POS_FRAMES, idx);
+        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
+        double t_sec = (!std::isnan(t_ms) && t_ms > 0.0) ? (t_ms / 1000.0)
+                        : ((raw_fps > 0.0) ? (static_cast<double>(idx) / raw_fps) : 0.0);
+
+        bool take = !do_sample;
+        if (!take) {
+            if (t_sec + 1e-9 >= next_sample_t) {
+                take = true;
+                while (next_sample_t <= t_sec) next_sample_t += sample_interval;
+            }
+        }
+        if (take) {
+            ++processed;
+            if (!onFrame(idx, bgr, t_sec)) break;
+        }
+        ++idx;
+    }
+    return processed;
+}
+
+} // namespace vision

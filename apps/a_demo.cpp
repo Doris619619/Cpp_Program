@@ -32,6 +32,70 @@ int64_t now_ms() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+/* onFrame 
+
+  @param frame_index         current frame index  
+  @param bgr:                current frame image in BGR format
+  @param t_sec:              current frame timestamp in seconds
+  @param now_ms:             current system time in milliseconds
+  @param input_path:         path of the input image or video
+  @param video_src_path:     source path of the video file
+  @param ofs:                output file stream for recording annotated frames
+  @param cfg:                configuration settings for vision processing
+  @param vision:             instance of VisionA for processing frames
+  @param latest_frame_file:  path to the file storing the latest frame information
+  @param processed:          reference to a counter for processed frames
+
+  @note Logic
+  @note - process frame by vision.processFrame() and receive the state
+  @note - based on the state, output the content in the cli
+  @note - DO NOT conduct visualization here, hand it over to the other method
+  @note - record annotated frame and output in the jsonl file
+  @note - DO NOT responsible for judging whether to save-in-disk, return bool for handled or not
+*/
+bool static onFrame(
+    int frame_index, 
+    const cv::Mat& bgr, 
+    double /*t_sec*/, 
+    int64_t now_ms,
+    const std::filesystem::path& input_path,
+    const std::string& video_src_path,
+    std::ofstream& ofs,
+    const VisionConfig& cfg,
+    VisionA& vision,
+    const std::string& latest_frame_file,
+    size_t& processed
+) {
+    // process frame
+    auto states = vision.processFrame(bgr, now_ms, frame_index++);
+
+    // output in CLI
+    int64_t ts = states.empty() ? now_ms : states.front().ts_ms;
+    for (auto &s : states) {
+        std::cout << s.seat_id << " " << toString(s.occupancy_state)
+                  << " pc = " << s.person_conf_max
+                  << " oc = " << s.object_conf_max
+                  << " fg = " << s.fg_ratio
+                  << " snap = " << (s.snapshot_path.empty() ? "-" : s.snapshot_path)
+                  << "\n";
+    }
+
+    // record annotated frame
+    auto stem = input_path.stem().string();
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%s_%06d.jpg", stem.c_str(), frame_index);
+    std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / buf).string();
+    //cv::imwrite(annotated_path, vis);
+    std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, video_src_path, annotated_path);
+    ofs << line << "\n";
+    {
+        std::ofstream lf(latest_frame_file, std::ios::trunc);
+        if (lf) lf << line << "\n";
+    }
+    ++processed;
+    return true;
+}
+
 int main(int argc, char** argv) {
     // CLI args settings (parts)
     std::string img_dir = "data/frames";               // --framesrc 输入图像目录或视频文件
@@ -249,36 +313,48 @@ int main(int argc, char** argv) {
                     std::cerr << "Frame error: unknown src=" << src_path << "\n";
                 }
             }
-        } else {///* Video Processing
+        
+        } else {// Video Processing
             // here the input_path is video file
             if (stream_video) { // streaming video: Extract and Process Frame-by-Frame from Video
+                /* Note: Here the iterate func. will conduct the extraction,
+                    onFrame is only an arg which has a type of boolean func. here.
+                    The onFrame func. is implemented here, and the iterate func. is
+                    implemneted in FrameExtraction.cpp. So the iterate func. need arg
+                    stream_video to decide its extraction way. The onFrame only 
+                    responsible for processing and decide whether continue sampling
+                */
+
                 // 文件：按视频处理并逐帧送入 VisionA
-                std::cout << "Input is a video file, iterating frames...\n";
+                std::cout << "Input is a video file, mode streaming, iterating frames...\n";
                 auto src_path = input_path.string();
                 size_t processed = 0;
 
-                /* Note: Here the iterate func. will conduct the extraction,
-                      onFrame is only an arg which has a type of boolean func. here.
-                      The onFrame func. is implemented here, and the iterate func. is
-                      implemneted in FrameExtraction.cpp. So the iterate func. need arg
-                      stream_video to decide its extraction way. The onFrame only 
-                      responsible for processing and decide whether continue sampling
-                */
-
                 // iterate over the video to extract & process frames 1-by-1
-                FrameExtractor::iterate(
-                    src_path,     // video path
-                    [&](int frame_idx, const cv::Mat& bgr, double /*tsec*/) -> bool { // onFrame callback, truncate iteration if return false
-                        /*     func. onFrame
-                        *  handle Processing of each frame, output false to truncate iteration
-                        *  truncate condition: 
-                        *   - reached max_process_frames
-                        *   - ?
-                        */
-                    
-                        
+                FrameExtractor::streamProcess(
+                    src_path,                                                         // video path
+                    [&](int frame_idx, const cv::Mat& bgr, double /*tsec*/) -> bool { // conduct onFrame process
+                        return onFrame(frame_index, 
+                                        bgr, 
+                                        /*t_sec*/0.0, 
+                                        now_ms(), 
+                                        input_path, 
+                                        src_path, 
+                                        ofs, 
+                                        cfg, 
+                                        vision, 
+                                        latest_frame_file, 
+                                        processed);
+                    },                        
+                    extract_fps,                                                      // extract fps
+                    0,                                                                // start frame idx
+                    -1                                                                // ending frame idx (-1: all frames) 
+                );
 
+                // output processed frames cnt
+                std::cout << "Processed video frames: " << processed << "\n";
 
+                    /*  old logic, just omit it  
                         // extract and process frame-by-frame from video
                         auto states = vision.processFrame(bgr, now_ms(), frame_index++);
                     
@@ -324,16 +400,8 @@ int main(int argc, char** argv) {
                         }
                         ++processed;
                         return true; // 继续
-                    },
-                    extract_fps,            // extract fps
-                    0                      // start frame idx
-                    // ending frame idx (-1: all frames) 
-                    /* TODO: for safety reason, better set total_frames_cnt / 50 
-                            or leveled function as a safety freq thresh: 
-                            avoid flush video frames handling
-                    */
-                );
-                std::cout << "Processed video frames: " << processed << "\n";
+                    },*/
+            
             } else { /* Extract frames from video then process frames in directory
                 
             
@@ -370,7 +438,7 @@ int main(int argc, char** argv) {
             size_t processed_frames = 0;
             if (stream_video) {
                 // 直接迭代视频帧
-                FrameExtractor::iterate(
+                FrameExtractor::streamProcess(
                     input_path.string(),
                     [&](int frameIdx, const cv::Mat& bgr, double /*tsec*/) -> bool {
                         if (bgr.empty()) return true;
