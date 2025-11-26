@@ -66,7 +66,7 @@ public:
         int endFrame = -1
     );
 
-    /*  @brief bulkExtraction 批量提取视频帧为图像文件  
+    /*  @brief bulkExtraction 批量提取视频帧  
     *  
     *  @param video_path:        视频文件路径
     *  @param out_dir:           输出目录
@@ -79,6 +79,19 @@ public:
         int end_frame = -1,
         int jpeg_quality,
         const std::string& filename_prefix
+    );
+
+    // Bulk Processing Video  批量处理视频帧
+    size_t FrameProcessor::bulkProcess(
+        const std::string& video_path,
+        const std::string& out_dir,
+        const std::function<bool(int, const cv::Mat&, double)>& onFrame_,
+        double sample_fps,
+        int start_frame,
+        int end_frame,
+        int jpeg_quality,
+        const std::string& filename_prefix,
+        size_t max_process_frames
     );
 
     /*static size_t imageProcess(

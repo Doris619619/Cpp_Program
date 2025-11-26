@@ -136,7 +136,7 @@ bool static onFrame(
 // Stream Processing Video
 bool FrameProcessor::streamProcess(
     const std::string& video_path,
-    const std::function<bool(int, const cv::Mat&, double)> &onFrame_, // callback func., truncate sampling if return false
+    const std::function<bool(int, const cv::Mat&, double)> &onFrame_, // callback func, implemented by user/demo with onFrame called
     double sample_fps,                                                // sampling_freq
     int start_frame,                                                  // first_frame index = 0
     int end_frame                                                     // end_frame index = -1 (the ending frame)
@@ -156,7 +156,7 @@ bool FrameProcessor::streamProcess(
 
     // sample args setting
     const bool do_sample = (sample_fps > 0.0);
-    int sample_stepsize = static_cast<int>(do_sample ? (sample_fps >= original_fps ? original_fps * 5 : 1.0 / sample_fps) : 0.0); // sampleing interval = 1 / f
+    int sample_stepsize = do_sample ? (sample_fps >= original_fps ? original_fps * 5 : 1 * sample_fps) : 0; // sampleing stepsize is of frames index / cnt, not time interval
     double t_next_sample = 0.0;                                         // next sampling time thresh (seconds)
     int sample_cnt_ub = 0;
     int processed_cnt = 0;
@@ -279,13 +279,95 @@ size_t FrameProcessor::bulkExtraction(
     if (start_frame < 0) start_frame = 0;
     if (end_frame >= 0 && end_frame < start_frame) end_frame = start_frame;
 
-    // set stride
-    int stride = 1;
+    // set sample stepsize (of frame index / cnt, not time interval)
+    int sample_stempsize = 1;
     if (sample_fps > 0.0 && original_fps > 0.0) {
-        stride = getStepsize(static_cast<size_t>(total_frames), sample_fps, original_fps);
-        //stride = static_cast<int>(std::floor(original_fps / sample_fps));
-        if (stride < 1) stride = 1;
+        sample_stempsize = getStepsize(static_cast<size_t>(total_frames), (sample_fps / original_fps <= 1 ? static_cast<int>(100 * sample_fps / original_fps) : 20), original_fps);
+        if (sample_stempsize < 1) sample_stempsize = 1;
     }
+
+    // extract frames
+    size_t extracted_cnt = 0;
+    int consecutive_failures_cnt = 0;
+    std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, std::clamp(jpeg_quality, 1, 100) };
+    for (int idx = start_frame; end_frame < 0 ? true : (idx <= end_frame); idx += sample_stempsize) {
+        // skip-sampling
+        cap.set(cv::CAP_PROP_POS_FRAMES, idx);
+        cv::Mat bgr;
+        if (!cap.read(bgr) || bgr.empty()) { // read failed
+            std::cerr << "[FrameProcessor] bulkExtraction read failed at frame index " << idx << "\n";
+            ++consecutive_failures_cnt;
+            if (consecutive_failures_cnt >= 3) {  // consecutive 3 failures
+                std::cerr << "[FrameProcessor] bulkExtraction stopping due to 3 consecutive read failures.\n";
+                break;
+            }
+            continue;
+        }
+        consecutive_failures_cnt = 0;
+
+        // derive output file path
+        std::ostringstream oss;
+        oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg"; // 
+        fs::path out_path = fs::path(out_dir) / oss.str();
+        if (!cv::imwrite(out_path.string(), bgr, params)) {
+            std::cerr << "[FrameProcessor] bulkExtraction write failed: " << out_path.string() << " at frame index " << idx << "\n";
+        } else {
+            ++extracted_cnt;
+        }
+    }
+    return extracted_cnt;
+}
+
+// Bulk Processing Video
+size_t FrameProcessor::bulkProcess(
+    const std::string& video_path,
+    const std::string& out_dir,
+    const std::function<bool(int, const cv::Mat&, double)>& onFrame_,
+    double sample_fps,
+    int start_frame,
+    int end_frame,
+    int jpeg_quality,
+    const std::string& filename_prefix,
+    size_t max_process_frames                                          // use user input --max
+) {
+    // bulk extract frames
+    size_t extracted = bulkExtraction(video_path, out_dir, sample_fps, start_frame, end_frame, jpeg_quality, filename_prefix);
+    if (extracted == 0) return 0;
+
+    // set stepsize 
+    int process_stepsize = 1;
+
+    
+    // process extracted frames
+    size_t processed_cnt = 0;
+    int consecutive_failures_cnt = 0;
+    for (size_t idx = 0; idx < extracted; idx+=process_stepsize) {
+        
+        
+        
+// ===== logic below maybe not good, use imageProcess instead ===========
+        
+        if (max_process_frames > 0 && processed_cnt >= max_process_frames) break;
+        cv::Mat bgr = cv::imread(files[i].string());
+        if (bgr.empty()) {
+            std::cerr << "[FrameProcessor] bulkProcess imread failed: " << files[i].string() << "\n";
+            ++consecutive_failures_cnt;
+            if (consecutive_failures_cnt >= 3) {
+                std::cerr << "[FrameProcessor] bulkProcess stopping due to 3 consecutive read failures.\n";
+                break;
+            }
+            continue;
+        }
+        consecutive_failures_cnt = 0;
+
+        // process frame
+        if (onFrame_) {
+            // 这里 t_sec 用 0.0, 如需精准时间可在文件名或外部映射中提供
+            if (!onFrame_(static_cast<int>(i), bgr, 0.0)) break;
+        }
+        ++processed_cnt;
+    }
+    return processed_cnt;
 }
 
 /* imageProcess   
@@ -421,7 +503,7 @@ static int getStepsize(size_t image_count, int sample_fp100, double original_fps
     if (sample_fp100 <= 0) return getStepsize(image_count);
     //if (samplle_fp100 > original_fps)
     if (sample_fp100 > 100) sample_fp100 = 20; // 超过100则按安全默认20 fp100
-    int step = static_cast<int>(std::floor(100 / sample_fp100));
+    int step = static_cast<int>(std::floor(100 / sample_fp100)) + 1;
     return std::max(step, 1);
 }
 
@@ -582,17 +664,17 @@ size_t FrameProcessor::bulkExtraction(
     if (start_frame < 0) start_frame = 0;
     if (end_frame >= 0 && end_frame < start_frame) end_frame = start_frame;
 
-    int stride = 1;
+    int sample_stepsize = 1;
     if (extract_fps > 0.0 && original_fps > 0.0) {
-        stride = static_cast<int>(std::floor(original_fps / extract_fps));
-        if (stride < 1) stride = 1;
+        sample_stepsize = static_cast<int>(std::floor(original_fps / extract_fps));
+        if (sample_stepsize < 1) sample_stepsize = 1;
     }
 
     std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, std::clamp(jpeg_quality, 1, 100) };
 
     size_t saved = 0;
     int consecutive_failures = 0;
-    for (int idx = start_frame; end_frame < 0 ? true : (idx <= end_frame); idx += stride) {
+    for (int idx = start_frame; end_frame < 0 ? true : (idx <= end_frame); idx += sample_stepsize) {
         cap.set(cv::CAP_PROP_POS_FRAMES, idx);
         cv::Mat bgr;
         if (!cap.read(bgr) || bgr.empty()) {
@@ -608,7 +690,7 @@ size_t FrameProcessor::bulkExtraction(
 
         std::ostringstream oss;
         oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg";
-        fs::path out_path = fs::path(out_dir) << oss.str();
+        fs::path out_path = fs::path(out_dir) / oss.str();
         if (!cv::imwrite(out_path.string(), bgr, params)) {
             std::cerr << "[FrameProcessor] bulkExtraction imwrite failed: " << out_path.string() << "\n";
         } else {
