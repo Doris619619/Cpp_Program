@@ -95,10 +95,9 @@ bool static onFrame(
     const cv::Mat& bgr, 
     double /*t_sec*/, 
     int64_t now_ms,
-    const std::filesystem::path& input_path,
-    const std::string& video_src_path,
+    const std::filesystem::path& input_path,   // path (img path / video file)
+    const std::string& annotated_frames_dir,
     std::ofstream& ofs,
-    const VisionConfig& cfg,
     VisionA& vision,
     const std::string& latest_frame_file,
     size_t& processed
@@ -109,7 +108,8 @@ bool static onFrame(
     // output in CLI
     int64_t ts = states.empty() ? now_ms : states.front().ts_ms;
     for (auto &s : states) {
-        std::cout << s.seat_id << " " << toString(s.occupancy_state)
+        std::cout << "[FrameProcessor] Processed Frame " << frame_index << " @ " << ts << " ms: "
+                  << " seat = " << s.seat_id << " " << toString(s.occupancy_state)
                   << " pc = " << s.person_conf_max
                   << " oc = " << s.object_conf_max
                   << " fg = " << s.fg_ratio
@@ -121,15 +121,17 @@ bool static onFrame(
     auto stem = input_path.stem().string();
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%s_%06d.jpg", stem.c_str(), frame_index);
-    std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / buf).string();
+    std::string annotated_path = (std::filesystem::path(annotated_frames_dir) / buf).string();
     //cv::imwrite(annotated_path, vis);
-    std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, video_src_path, annotated_path);
+    std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, input_path.string(), annotated_path);
     ofs << line << "\n";
     {
         std::ofstream lf(latest_frame_file, std::ios::trunc);
         if (lf) lf << line << "\n";
     }
     ++processed;
+
+    // when will return false? 
     return true;
 }
 
@@ -307,7 +309,7 @@ size_t FrameProcessor::bulkExtraction(
 
         // derive output file path
         std::ostringstream oss;
-        oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg"; // 
+        oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg"; // img: prefix + 000000 + .jpg
         fs::path out_path = fs::path(out_dir) / oss.str();
         if (!cv::imwrite(out_path.string(), bgr, params)) {
             std::cerr << "[FrameProcessor] bulkExtraction write failed: " << out_path.string() << " at frame index " << idx << "\n";
@@ -321,36 +323,44 @@ size_t FrameProcessor::bulkExtraction(
 // Bulk Processing Video
 size_t FrameProcessor::bulkProcess(
     const std::string& video_path,
-    const std::string& out_dir,
-    const std::function<bool(int, const cv::Mat&, double)>& onFrame_,
+    const std::string& img_dir,
+    const std::string& lastest_frame_dir,
     double sample_fps,
     int start_frame,
     int end_frame,
-    int jpeg_quality,
-    const std::string& filename_prefix,
-    size_t max_process_frames                                          // use user input --max
+    const VisionConfig& cfg,                      // used by onFrame
+    std::ofstream& ofs,
+    VisionA& vision,
+    size_t max_process_frames = 500,              // use user input --max
+    int jpeg_quality = 95,
+    const std::string& filename_prefix = "f_"
+    
 ) {
-    // bulk extract frames
-    size_t extracted = bulkExtraction(video_path, out_dir, sample_fps, start_frame, end_frame, jpeg_quality, filename_prefix);
+    // bulk extract frames (with sample)
+    size_t extracted = bulkExtraction(video_path, img_dir, sample_fps, start_frame, end_frame, jpeg_quality, filename_prefix);
     if (extracted == 0) return 0;
 
     // set stepsize 
-    int process_stepsize = 1;
+    int process_stepsize = 1;  // difer from extraction sampling stepsize
+    /* since sampling has been conducted during extraction, 
+       it's not urgent to add another sampling here.
+       if still needed after consideration, add later.
 
-    
+       needed to mention that the stepsize here should be determined by 
+       total img cnt and consider idx diff between each img, as they 
+       have been sampled and thus idx name of imgs may not be consecutive,
+       follow the rule found.
+       
+    */
+
     // process extracted frames
     size_t processed_cnt = 0;
     int consecutive_failures_cnt = 0;
     for (size_t idx = 0; idx < extracted; idx+=process_stepsize) {
         
-        
-        
-// ===== logic below maybe not good, use imageProcess instead ===========
-        
-        if (max_process_frames > 0 && processed_cnt >= max_process_frames) break;
-        cv::Mat bgr = cv::imread(files[i].string());
-        if (bgr.empty()) {
-            std::cerr << "[FrameProcessor] bulkProcess imread failed: " << files[i].string() << "\n";
+        // check if exists before processing
+        if (!std::filesystem::exists(std::filesystem::path(img_dir) / (filename_prefix + std::to_string(idx) + ".jpg"))) {  // img: prefix + 000000 + .jpg (idx at 000000)
+            std::cerr << "[FrameProcessor] bulkProcess imread failed: " << (std::filesystem::path(img_dir) / (filename_prefix + std::to_string(idx) + ".jpg")).string() << "\n";
             ++consecutive_failures_cnt;
             if (consecutive_failures_cnt >= 3) {
                 std::cerr << "[FrameProcessor] bulkProcess stopping due to 3 consecutive read failures.\n";
@@ -360,12 +370,19 @@ size_t FrameProcessor::bulkProcess(
         }
         consecutive_failures_cnt = 0;
 
-        // process frame
-        if (onFrame_) {
-            // 这里 t_sec 用 0.0, 如需精准时间可在文件名或外部映射中提供
-            if (!onFrame_(static_cast<int>(i), bgr, 0.0)) break;
-        }
-        ++processed_cnt;
+        // skip-sampling (detailed logic added later if needed)
+
+        // process frame via imageProcess
+        FrameProcessor::imageProcess(
+            img_dir, 
+            ofs, 
+            cfg,
+            vision,
+            lastest_frame_dir,
+            max_process_frames - processed_cnt
+        );
+
+        processed_cnt++;
     }
     return processed_cnt;
 }
@@ -374,43 +391,34 @@ size_t FrameProcessor::bulkProcess(
 * 批量图像处理: 遍历目录下的所有图像文件并通过回调处理
 * 
 *  @param image_dir:            图像所在目录
-*  @param onFrame_:             回调函数,签名为 bool(int, const cv::Mat&, double, int64_t, const std::filesystem::path&, const std::string&, std::ofstream&, const VisionConfig&, VisionA&, const std::string&, size_t&)
+*  @param ofs:                  输出文件流
 *  @param cfg:                  VisionConfig配置
 *  @param vision:               VisionA实例
-*  @param ofs:                  输出文件流
 *  @param latest_frame_file:    最新帧文件路径
 *  @param max_process_frames:   最大处理帧数
 *  
 *  @return  number of frames processed 处理的帧数
 */
-static size_t imageProcess(
-    const std::string& image_dir,
-    const std::function<bool(
-        int, 
-        const cv::Mat&, 
-        double, 
-        int64_t, 
-        const std::filesystem::path&, 
-        const std::string&, 
-        std::ofstream& ofs, 
-        const VisionConfig& cfg, 
-        VisionA& vision, 
-        const std::string&, 
-        size_t&
-    )>& onFrame_,
-    //const VisionConfig& cfg,   //
-    //VisionA& vision,           //
-    //std::ofstream& ofs,        //
-    const std::string& latest_frame_file,
-    size_t max_process_frames
+size_t FrameProcessor::imageProcess(
+    const std::string& image_dir,           // 
+    std::ofstream& ofs,                     //
+    const VisionConfig& cfg,                //
+    VisionA& vision,                        //
+    const std::string& latest_frame_file,   // 
+    size_t max_process_frames               // 
 ) {
+    // basic args
     size_t total_processed = 0;
     size_t total_errors = 0;
     int frame_index = 0;
+    const std::string annotated_frames_dir = !cfg.annotated_frames_dir.empty() ? cfg.annotated_frames_dir : "data/annotated_frames"; // directory to save annotated frames
     
+    // input path check
     auto input_path = std::filesystem::path(image_dir);
     if (!std::filesystem::is_directory(input_path)) {  // open directory failed
-        std::cerr << "[FrameProcessor] imageProcess: not a directory: " << image_dir << "\n";
+        std::cerr << "[FrameProcessor] imageProcess: not a directory: " << image_dir << "\n"
+                  << "                 Hint: to process images, use directory to images as argument.\n"
+                  << "                 e.g. --input /path/to/images/\n";
         return 0;
     }
     
@@ -418,25 +426,27 @@ static size_t imageProcess(
     
     // iteration on the imgs (y no sampling here? needed!!! )
     for (auto &entry : std::filesystem::directory_iterator(input_path)) {
+        
+        // basic checks
         if (!entry.is_regular_file()) continue;
-        std::string src_path = entry.path().string();
-        cv::Mat bgr = cv::imread(src_path);
+        cv::Mat bgr = cv::imread(entry.path().string());
         if (bgr.empty()) continue;
         
         // process frame with exception handling
         try {
+            // derive current system time in ms
             int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             
-            bool continue_process = onFrame_(
+            // process frame via onFrame
+            bool continue_process = FrameProcessor::onFrame(
                 frame_index,
                 bgr,
                 0.0,  // t_sec
                 now_ms,
                 input_path,
-                src_path,
+                annotated_frames_dir,
                 ofs,
-                cfg,
                 vision,
                 latest_frame_file,
                 total_processed
@@ -446,20 +456,22 @@ static size_t imageProcess(
             ++total_processed;
             
             if (!continue_process || total_processed >= max_process_frames) {  // termination 
-                std::cout << "[FrameProcessor] Stopping at frame " << frame_index << "\n";
+                std::cout << "[FrameProcessor] Stopping at frame " << frame_index << "\n"
+                          << "                 onFrame reported: " << (continue_process ? ("frame " + std::to_string(frame_index) + " handled, max process amount reached.") 
+                                                                                        : "truncation requested at frame " + std::to_string(frame_index) + ".") << "\n";
                 break;
             }
             
         } catch (const std::exception &exception) { // exception handling
             ++total_errors;
-            std::cerr << "[FrameProcessor] Frame error: " << exception.what() << " src=" << src_path << "\n";
-        } catch (...) {
+            std::cerr << "[FrameProcessor] Frame error: " << exception.what() << " src=" << input_path.string() << "\n";
+        } catch (...) {    // unknown exception
             ++total_errors;
-            std::cerr << "[FrameProcessor] Frame error: unknown src=" << src_path << "\n";
+            std::cerr << "[FrameProcessor] Frame error: unknown src=" << input_path.string() << "\n";
         }
     }
     
-    std::cout << "[FrameProcessor] imageProcess completed: processed=" << total_processed << " errors=" << total_errors << "\n";
+    std::cout << "[FrameProcessor] imageProcess completed: processed=" << total_processed << ", errors=" << total_errors << "\n";
     return total_processed;
 } 
 

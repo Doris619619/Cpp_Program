@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
         
         // Images Processing (Directly, NO Extraction)
         if (std::filesystem::is_directory(input_path)) {  // process frame from img directory
-            std::cout << "Image directory mode. Iterating files...\n";
+            //std::cout << "Image directory mode. Iterating files...\n";
             
             // use directory iterator to iterate the files / folders
             for (auto &entry : std::filesystem::directory_iterator(input_path)) {    
@@ -171,10 +171,10 @@ int main(int argc, char** argv) {
                 if (bgr.empty()) continue;
                 
                 try {    // process frames directly
-                    // process frames
+                    //// process frames
                     auto states = vision.processFrame(bgr, now_ms(), frame_index++);
                     
-                    // output in CLI
+                    //// output in CLI
                     int64_t ts = states.empty() ? now_ms() : states.front().ts_ms;
                     for (auto &s : states) {
                         std::cout << s.seat_id << " " << toString(s.occupancy_state)
@@ -185,6 +185,7 @@ int main(int argc, char** argv) {
                                   << "\n";
                     }
 
+                    // record it for later used in annotation methods
                     // visualize person/object detecting results in every frame
                     std::vector<BBox> all_persons, all_objects;
                     vision.getLastDetections(all_persons, all_objects);
