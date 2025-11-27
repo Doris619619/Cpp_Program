@@ -5,10 +5,8 @@
 #include "vision/VisionA.h"
 #include "vision/Publish.h"
 #include "vision/Config.h"
-//#include "vision/FrameProcessor.h"
 #include <opencv2/opencv.hpp>
-#include <filesystem>
-//#include <iostream>
+//#include <filesystem>
 #include <chrono>
 #include <fstream>
 #include <cstddef>
@@ -61,13 +59,7 @@ namespace vision {
 
     */
 
-
-static double safe_fps(cv::VideoCapture& cap) {
-    double original_fps = cap.get(cv::CAP_PROP_FPS);  // video original fps
-    if (original_fps < 1e-3 || std::isnan(original_fps)) return 0.0;
-    else if (original_fps > 2.0)                         return 2.0; // cap the fps to 2.0 to avoid too dense sampling
-    return original_fps;
-}
+// ==================== Core: Processing ===========================
 
 /* onFrame 对每帧照片处理   
 
@@ -90,7 +82,7 @@ static double safe_fps(cv::VideoCapture& cap) {
   @note - record annotated frame and output in the jsonl file
   @note - DO NOT responsible for judging whether to save-in-disk, return bool for handled or not
 */
-bool static onFrame(
+bool vision::FrameProcessor::onFrame(
     int frame_index, 
     const cv::Mat& bgr, 
     double /*t_sec*/, 
@@ -117,6 +109,8 @@ bool static onFrame(
                   << "\n";
     }
 
+    // annotation imlementation
+
     // record annotated frame
     auto stem = input_path.stem().string();
     char buf[64];
@@ -136,12 +130,16 @@ bool static onFrame(
 }
 
 // Stream Processing Video
-bool FrameProcessor::streamProcess(
-    const std::string& video_path,
-    const std::function<bool(int, const cv::Mat&, double)> &onFrame_, // callback func, implemented by user/demo with onFrame called
-    double sample_fps,                                                // sampling_freq
-    int start_frame,                                                  // first_frame index = 0
-    int end_frame                                                     // end_frame index = -1 (the ending frame)
+size_t vision::FrameProcessor::streamProcess(
+    const std::string& video_path,         // video file path
+    const std::string& latest_frame_dir,   // output states parent path                        
+    double sample_fps,                     // sampling_freq
+    int start_frame,                       // first_frame index = 0
+    int end_frame,                         // end_frame index = -1 (the ending frame)
+    VisionA& vision,                       // VisionA
+    const VisionConfig& cfg,               // VisionConfig
+    std::ofstream& ofs,                    // output file stream
+    size_t max_process_frames              // maximum frames to process
 ) {    
     // frame capturer initialization
     cv::VideoCapture cap(video_path);
@@ -161,7 +159,10 @@ bool FrameProcessor::streamProcess(
     int sample_stepsize = do_sample ? (sample_fps >= original_fps ? original_fps * 5 : 1 * sample_fps) : 0; // sampleing stepsize is of frames index / cnt, not time interval
     double t_next_sample = 0.0;                                         // next sampling time thresh (seconds)
     int sample_cnt_ub = 0;
-    int processed_cnt = 0;
+    size_t processed_cnt = 0;
+    size_t total_errors = 0;
+    const std::string annotated_frames_dir = !cfg.annotated_frames_dir.empty() ? cfg.annotated_frames_dir : "data/annotated_frames"; // directory to save annotated frames
+    auto input_path = std::filesystem::path(video_path);
 
     // sampling fps safety check
     if (original_total_frames > 6000) {
@@ -194,30 +195,56 @@ bool FrameProcessor::streamProcess(
             break; 
         }
 
-        // derive current timestamp ms and s (sec)
-        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
-        double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (original_fps > 0.0 ? (static_cast<double>(idx) / original_fps) : 0.0);
+        // process frame with exception handling
+        try {
+            // derive current timestamp ms and s (sec)
+            double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
+            double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (original_fps > 0.0 ? (static_cast<double>(idx) / original_fps) : 0.0);
+            int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
 
-        // process frame
-        if (!onFrame_(idx, bgr, t_sec)) {  // process and check termination
-            std::cerr << "[FrameProcessor] onFrame_ callback requested termination at frame index " << idx << "\n";
-            break;
+            // process frame
+            bool continue_process = FrameProcessor::onFrame(
+                idx,
+                bgr,
+                t_sec,
+                now_ms,
+                input_path.string(),
+                annotated_frames_dir,
+                ofs,
+                vision,
+                (fs::path(latest_frame_dir) / "latest_frame.jsonl").string(),
+                processed_cnt
+            );
+            processed_cnt++;
+
+            // ending check
+            if (end_frame >= 0 && idx >= end_frame) break;
+            if (!continue_process || processed_cnt >= max_process_frames) {// termination 
+                std::cout << "[FrameProcessor] Stopping at frame " << idx << "\n"
+                          << "                 onFrame reported: " << (continue_process ? ("frame " + std::to_string(idx) + " handled, max process amount reached.") 
+                                                                                        : "truncation requested at frame " + std::to_string(idx) + ".") << "\n";
+                break;
+            }
+
+            // sample saving logic
+            /* not urgent */
+        } catch (const std::exception& exception) {
+            total_errors++;
+            std::cerr << "[FrameProcessor] Exception at frame index " << idx << ": " << exception.what() << "\n";
+        } catch (...) {
+            total_errors++;
+            std::cerr << "[FrameProcessor] Unknown Exception at frame index " << idx << "\n";
         }
-        processed_cnt++;
-
-        // ending check
-        if (end_frame >= 0 && idx >= end_frame) break;
-
-        // sample saving logic
-        /* not urgent */
     }
 
     // final output
     std::cout << "[FrameProcessor] streamProcess completed: processed=" << processed_cnt << "\n                 "
+              << "errors=" << total_errors << "\n                 "
               << "original total frames=" << original_total_frames 
               << ", original fps=" << std::fixed << std::setprecision(2) << original_fps << "\n";
 
-    return true;
+    return processed_cnt;
 
     /*  old logic, just omit it   
     //// y onFrame used
@@ -248,24 +275,17 @@ bool FrameProcessor::streamProcess(
 }
 
 // Bulk Extracting Video Frames 批量提取视频帧为图像文件
-size_t FrameProcessor::bulkExtraction(
+size_t vision::FrameProcessor::bulkExtraction(
     const std::string& video_path,
-    const std::string& out_dir,
-    double sample_fps,                   // sampling fps = extract_fps, which is the program input arg
-    int start_frame = 0,
-    int end_frame = -1,
+    const std::string& out_dir,                    // extract to data/frames/frames_vNNN/
+    double sample_fps,                             // sampling fps = extract_fps, which is the program input arg
+    int start_frame,
+    int end_frame,
     int jpeg_quality,
     const std::string& filename_prefix
 ) {
     // find or create output directory
-    std::error_code error_code;
-    if (!std::filesystem::exists(out_dir)) { // output directory not exists
-        std::filesystem::create_directories(out_dir, error_code);
-        if (error_code) {     // create directory failed
-            std::cerr << "[FrameProcessor] bulkExtraction create dir failed: " << out_dir << " : " << error_code.message() << "\n";
-            return 0;
-        }
-    }
+    std::string actual_out_dir = FrameProcessor::getExtractionOutDir(out_dir);
 
     // init frame capturer and open video
     cv::VideoCapture cap(video_path);
@@ -284,7 +304,7 @@ size_t FrameProcessor::bulkExtraction(
     // set sample stepsize (of frame index / cnt, not time interval)
     int sample_stempsize = 1;
     if (sample_fps > 0.0 && original_fps > 0.0) {
-        sample_stempsize = getStepsize(static_cast<size_t>(total_frames), (sample_fps / original_fps <= 1 ? static_cast<int>(100 * sample_fps / original_fps) : 20), original_fps);
+        sample_stempsize = getStepsize(static_cast<size_t>(total_frames), (sample_fps / original_fps <= 1 ? static_cast<int>(100 * sample_fps / original_fps) : 20));
         if (sample_stempsize < 1) sample_stempsize = 1;
     }
 
@@ -310,31 +330,54 @@ size_t FrameProcessor::bulkExtraction(
         // derive output file path
         std::ostringstream oss;
         oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg"; // img: prefix + 000000 + .jpg
-        fs::path out_path = fs::path(out_dir) / oss.str();
+        fs::path out_path = fs::path(actual_out_dir) / oss.str();
         if (!cv::imwrite(out_path.string(), bgr, params)) {
-            std::cerr << "[FrameProcessor] bulkExtraction write failed: " << out_path.string() << " at frame index " << idx << "\n";
+            std::cerr << "[FrameProcessor] bulkExtraction write failed: " << actual_out_dir << " at frame index " << idx << "\n";
         } else {
             ++extracted_cnt;
         }
     }
+
+    std::cout << "[FrameProcessor] bulkExtraction completed: extracted=" << extracted_cnt << "\n"
+              << "                 from video: " << video_path << "\n"
+              << "                 to directory: " << out_dir << "\n"
+              << "                 total frames in video: " << total_frames
+              << ", original fps: " << std::fixed << std::setprecision(2) << original_fps << "\n"
+              << "                 sampling stepsize: " << sample_stempsize << " (unit: frames)\n";
+
     return extracted_cnt;
 }
 
-// Bulk Processing Video
-size_t FrameProcessor::bulkProcess(
-    const std::string& video_path,
-    const std::string& img_dir,
-    const std::string& lastest_frame_dir,
-    double sample_fps,
-    int start_frame,
-    int end_frame,
-    const VisionConfig& cfg,                      // used by onFrame
-    std::ofstream& ofs,
-    VisionA& vision,
-    size_t max_process_frames = 500,              // use user input --max
-    int jpeg_quality = 95,
-    const std::string& filename_prefix = "f_"
-    
+/*  @brief Bulk Processing Video  批量处理视频帧
+*
+*   @param video_path:        视频文件路径
+*   @param img_dir:           图像输出目录
+*   @param lastest_frame_dir: 最新帧文件目录 
+*   @param sample_fps:       采样帧率
+*   @param start_frame:      起始帧索引
+*   @param end_frame:        结束帧索引
+*   @param cfg:              VisionConfig配置
+*   @param ofs:              输出文件流
+*   @param vision:           VisionA实例
+*   @param max_process_frames: 最大处理帧数
+*   @param jpeg_quality:      JPEG图像质量
+*   @param filename_prefix:   输出文件名前缀
+*
+*   @return number of frames processed 处理的帧数
+*/
+size_t vision::FrameProcessor::bulkProcess(
+    const std::string& video_path,                   // 
+    const std::string& img_dir,                      // 
+    const std::string& lastest_frame_dir,            // 
+    double sample_fps,                               // 
+    int start_frame,                                 //           
+    int end_frame,                                   // 
+    const VisionConfig& cfg,                         // VisionConfig used by onFrame
+    std::ofstream& ofs,                              // output file stream
+    VisionA& vision,                                 // VisionA
+    size_t max_process_frames,                       // use user input --max
+    int jpeg_quality,                                // 
+    const std::string& filename_prefix               // 
 ) {
     // bulk extract frames (with sample)
     size_t extracted = bulkExtraction(video_path, img_dir, sample_fps, start_frame, end_frame, jpeg_quality, filename_prefix);
@@ -342,6 +385,9 @@ size_t FrameProcessor::bulkProcess(
 
     // set stepsize 
     int process_stepsize = 1;  // difer from extraction sampling stepsize
+    int total_errors = 0;
+    int original_total_frames = static_cast<int>(cv::VideoCapture(video_path).get(cv::CAP_PROP_FRAME_COUNT));
+    double original_fps = cv::VideoCapture(video_path).get(cv::CAP_PROP_FPS);
     /* since sampling has been conducted during extraction, 
        it's not urgent to add another sampling here.
        if still needed after consideration, add later.
@@ -372,18 +418,38 @@ size_t FrameProcessor::bulkProcess(
 
         // skip-sampling (detailed logic added later if needed)
 
-        // process frame via imageProcess
-        FrameProcessor::imageProcess(
-            img_dir, 
-            ofs, 
-            cfg,
-            vision,
-            lastest_frame_dir,
-            max_process_frames - processed_cnt
-        );
+        // process with failure handling
+        try {
+            // process frame via imageProcess
+            FrameProcessor::imageProcess(
+                img_dir, 
+                ofs, 
+                cfg,
+                vision,
+                lastest_frame_dir,
+                max_process_frames - processed_cnt,
+                20,                                   // sample_fp100
+                original_total_frames
+            );
 
-        processed_cnt++;
+            processed_cnt++;
+
+        } catch (const std::exception& exception){
+            std::cerr << "[FrameProcessor] bulkProcess exception at image index " << idx << ": " << exception.what() << "\n";
+            ++consecutive_failures_cnt;
+        } catch (...) {
+            std::cerr << "[FrameProcessor] bulkProcess unknown exception at image index " << idx << "\n";
+            ++consecutive_failures_cnt;
+        }
+        
     }
+
+    // final output
+    std::cout << "[FrameProcessor] streamProcess completed: processed=" << processed_cnt << "\n                 "
+              << "errors=" << total_errors << "\n                 "
+              << "original total frames=" << original_total_frames 
+              << ", original fps=" << std::fixed << std::setprecision(2) << original_fps << "\n";
+
     return processed_cnt;
 }
 
@@ -399,24 +465,39 @@ size_t FrameProcessor::bulkProcess(
 *  
 *  @return  number of frames processed 处理的帧数
 */
-size_t FrameProcessor::imageProcess(
-    const std::string& image_dir,           // 
-    std::ofstream& ofs,                     //
-    const VisionConfig& cfg,                //
-    VisionA& vision,                        //
-    const std::string& latest_frame_file,   // 
-    size_t max_process_frames               // 
+size_t vision::FrameProcessor::imageProcess(
+    const std::string& image_path,              // images directory path string
+    const std::string& latest_frame_dir,        // output states parent path
+    std::ofstream& ofs,                         // output file stream
+    const VisionConfig& cfg,                    // VisionConfig
+    VisionA& vision,                            // VisionA
+    size_t max_process_frames,                  // max process frames
+    int sample_fp100,                           // frames to sample per 100 images
+    int original_total_frames                   // original total index offset (will recheck cnt of all images in directory if 0 provided)
 ) {
     // basic args
     size_t total_processed = 0;
     size_t total_errors = 0;
-    int frame_index = 0;
+    int frame_index = 0;                        // differ from original_img_idx below: this is idx recorded in jsonl as the idx of frame processed
+    size_t total_frames = (original_total_frames > 0) ? original_total_frames : countImageFilesInDir(image_path);
     const std::string annotated_frames_dir = !cfg.annotated_frames_dir.empty() ? cfg.annotated_frames_dir : "data/annotated_frames"; // directory to save annotated frames
     
+    int sample_fp100 = 20;                                         // default sampling fps100 if needed later
+    int sample_stepsize = getStepsize(total_frames, sample_fp100); // stepsize for sampling during processing
+    int original_img_idx = 0;                                      // original image index during iteration
+    
     // input path check
-    auto input_path = std::filesystem::path(image_dir);
-    if (!std::filesystem::is_directory(input_path)) {  // open directory failed
-        std::cerr << "[FrameProcessor] imageProcess: not a directory: " << image_dir << "\n"
+    if (std::filesystem::path(image_path).empty()) {
+        std::cerr << "[FrameProcessor] imageProcess: empty image path provided.\n";
+        std::error_code error_code;
+        std::filesystem::create_directories(image_path, error_code);
+        if (error_code) {
+            std::cerr << "[FrameProcessor] imageProcess: create directory failed: " << image_path << " : " << error_code.message() << "\n";
+            return 0;
+        }
+    }
+    if (!std::filesystem::is_directory(image_path)) {  // open directory failed
+        std::cerr << "[FrameProcessor] imageProcess: not a directory: " << image_path << "\n"
                   << "                 Hint: to process images, use directory to images as argument.\n"
                   << "                 e.g. --input /path/to/images/\n";
         return 0;
@@ -425,8 +506,22 @@ size_t FrameProcessor::imageProcess(
     std::cout << "[FrameProcessor] Image directory mode. Iterating files...\n";
     
     // iteration on the imgs (y no sampling here? needed!!! )
-    for (auto &entry : std::filesystem::directory_iterator(input_path)) {
+    for (auto &entry : std::filesystem::directory_iterator(image_path)) {
         
+        // image check
+        auto ext = entry.path().extension().string();                   // extension name of the entry file with dot
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (!entry.is_regular_file() || (ext != ".jpg" && ext != ".jpeg" && ext != ".png")) {
+            continue;                                                   // not a regular image file
+        }
+
+        // sampling logic
+        if (original_img_idx % sample_stepsize != 0) {
+            ++original_img_idx;
+            continue;
+        }
+        ++original_img_idx; 
+
         // basic checks
         if (!entry.is_regular_file()) continue;
         cv::Mat bgr = cv::imread(entry.path().string());
@@ -444,11 +539,11 @@ size_t FrameProcessor::imageProcess(
                 bgr,
                 0.0,  // t_sec
                 now_ms,
-                input_path,
+                std::filesystem::path(image_path),
                 annotated_frames_dir,
                 ofs,
                 vision,
-                latest_frame_file,
+                (std::filesystem::path(latest_frame_dir) / "latest_frame.jsonl").string(),
                 total_processed
             );
             
@@ -456,7 +551,7 @@ size_t FrameProcessor::imageProcess(
             ++total_processed;
             
             if (!continue_process || total_processed >= max_process_frames) {  // termination 
-                std::cout << "[FrameProcessor] Stopping at frame " << frame_index << "\n"
+                std::cout << "[FrameProcessor] Stopping at frame " << frame_index << " to be processed (the " << original_img_idx << " image in the directory)" << "\n"
                           << "                 onFrame reported: " << (continue_process ? ("frame " + std::to_string(frame_index) + " handled, max process amount reached.") 
                                                                                         : "truncation requested at frame " + std::to_string(frame_index) + ".") << "\n";
                 break;
@@ -464,19 +559,36 @@ size_t FrameProcessor::imageProcess(
             
         } catch (const std::exception &exception) { // exception handling
             ++total_errors;
-            std::cerr << "[FrameProcessor] Frame error: " << exception.what() << " src=" << input_path.string() << "\n";
+            std::cerr << "[FrameProcessor] Frame error: " << exception.what() << " src=" << image_path << "\n";
         } catch (...) {    // unknown exception
             ++total_errors;
-            std::cerr << "[FrameProcessor] Frame error: unknown src=" << input_path.string() << "\n";
+            std::cerr << "[FrameProcessor] Frame error: unknown src=" << image_path.string() << "\n";
         }
     }
+
+    // TODO:
+    // original_img_idx - frame_index mapping relationship derival
+    // related to stepsize and total_frames
+
+    std::cout << "[FrameProcessor] imageProcess completed: processed=" << total_processed << "\n                 "
+              << "errors=" << total_errors << "\n                 "
+              << "original total frames=" << total_frames << "\n                 "
+              << "stepsize to process the images: " << sample_stepsize << "\n                 "; 
     
-    std::cout << "[FrameProcessor] imageProcess completed: processed=" << total_processed << ", errors=" << total_errors << "\n";
     return total_processed;
 } 
 
+// ==================== Utils: Sampling, Counting, and Mapping ===========================
+
+static double safe_fps(cv::VideoCapture& cap) {
+    double original_fps = cap.get(cv::CAP_PROP_FPS);  // video original fps
+    if (original_fps < 1e-3 || std::isnan(original_fps)) return 0.0;
+    else if (original_fps > 2.0)                         return 2.0; // cap the fps to 2.0 to avoid too dense sampling
+    return original_fps;
+}
+
 // count files in specific directory
-static size_t countFilesInDir(const std::string& dir_path) {
+size_t vision::FrameProcessor::countFilesInDir(const std::string& dir_path) {
     std::error_code error_code;
     if (!std::filesystem::exists(dir_path, error_code) || !std::filesystem::is_directory(dir_path, error_code)) return 0;  // no dire exists || not a path
     size_t cnt = 0;
@@ -489,7 +601,7 @@ static size_t countFilesInDir(const std::string& dir_path) {
 }
 
 // count images files in specific directory (.jpg/.jpeg/.png)
-static size_t countImageFilesInDir(const std::string& dir_path) {
+size_t vision::FrameProcessor::countImageFilesInDir(const std::string& dir_path) {
     std::error_code error_code;
     if (!std::filesystem::exists(dir_path, error_code) || !std::filesystem::is_directory(dir_path, error_code)) return 0;   // no dire exists || not a path
     size_t cnt = 0;
@@ -504,237 +616,86 @@ static size_t countImageFilesInDir(const std::string& dir_path) {
 }
 
 // get stepsize based on img cnt
-static int getStepsize(size_t image_count) {
+int vision::FrameProcessor::getStepsize(size_t image_count) {
     if (image_count <= 500) return 5;
     if (image_count <= 1000) return 10;
     return 50;
 }
 
 // get stepsize based on img cnt and sample_fps100
-static int getStepsize(size_t image_count, int sample_fp100, double original_fps) {
+int vision::FrameProcessor::getStepsize(size_t image_count, int sample_fp100) {
     if (sample_fp100 <= 0) return getStepsize(image_count);
-    //if (samplle_fp100 > original_fps)
     if (sample_fp100 > 100) sample_fp100 = 20; // 超过100则按安全默认20 fp100
     int step = static_cast<int>(std::floor(100 / sample_fp100)) + 1;
     return std::max(step, 1);
 }
 
-/* draft
-bulk extraction: 
-
-imgprocessing: if come from video, no need to extract again.
-*/
-
-// ============== to be discarded =============
-
-size_t FrameProcessor::extractToDir(
-    const std::string& video_path,
-    const std::string& out_dir,
-    double extract_fps,
-    int jpeg_quality,
-    int start_frame,
-    int end_frame,
-    const std::string& filename_prefix)
-{
+// get extraction output directory
+std::string FrameProcessor::getExtractionOutDir(const std::string& out_dir){
+    std::filesystem::path frames_root = std::filesystem::path((out_dir.empty()) ? "data/frames" : out_dir);
     std::error_code error_code;
-    fs::create_directories(out_dir, error_code);
-    if (error_code) {
-        std::cerr << "[FrameProcessor] Failed to create dir: " << out_dir << " : " << error_code.message() << "\n";
-        return 0;
-    }
-
-    size_t saved = 0;
-    std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 
-                                std::clamp(jpeg_quality, 1, 100) };
-
-    streamProcess(
-        video_path,
-        [&](int frame_idx, const cv::Mat& bgr, double /*t_sec*/) -> bool {
-            std::ostringstream oss;
-            oss << filename_prefix << std::setw(6) << std::setfill('0') << frame_idx << ".jpg";
-            fs::path out_path = fs::path(out_dir) / oss.str();
-            if (cv::imwrite(out_path.string(), bgr, params)) {
-                ++saved;
-            } else {
-                std::cerr << "[FrameProcessor] imwrite failed: " << out_path.string() << "\n";
-            }
-            return true; // continue
-        },
-        extract_fps,
-        start_frame,
-        end_frame);
-
-    return saved;
-}
-
-// extract frames and return single cv::Mat
-cv::Mat FrameProcessor::extractFrame(
-    const std::string& video_path,
-    int target_frame_idx
-) {
-    cv::VideoCapture cap(video_path);
-    if (!cap.isOpened()) {  // open failed
-        std::cerr << "[FrameProcessor] extractFrame open failed: " << video_path << "\n";
-        return cv::Mat();
-    }
-    int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
-    if (target_frame_idx < 0 || (total_frames > 0 && target_frame_idx >= total_frames)) {  // invalid target index
-        std::cerr << "[FrameProcessor] extractFrame invalid target frame index: " << target_frame_idx << "\n";
-        return cv::Mat();
+    if (!std::filesystem::exists(out_dir)) { // output directory not exists
+        std::filesystem::create_directories(frames_root, error_code);
+        if (error_code) {     // create directory failed
+            std::cerr << "[FrameProcessor] bulkExtraction create out dir failed: " << out_dir << " : " << error_code.message() << "\n";
+            return frames_root.string();
+        }
     }
     
-    // seek to target frame
-    cap.set(cv::CAP_PROP_POS_FRAMES, target_frame_idx);
-    cv::Mat frame;
-    if (!cap.read(frame)) {  // read failed
-        std::cerr << "[FrameProcessor] extractFrame read failed at frame index " << target_frame_idx << "\n";
-        return cv::Mat();
+    int next_idx = 1;
+    for (auto &d : std::filesystem::directory_iterator(frames_root)) {
+        if (d.is_directory()) {
+            auto name = d.path().filename().string();
+            if (name.rfind("frames_v", 0) == 0) {
+                try { 
+                    int idx = std::stoi(name.substr(8)); 
+                    if (idx >= next_idx) next_idx = idx + 1; 
+                } catch (...) {
+                    std::cerr << "[FrameProcessor] getExtractionOutDir: invalid directory name found: " << name << "\n";
+                    return frames_root.string();
+                }
+            }
+        }
     }
-    return frame;
+
+    char buf_folder[32];
+    std::snprintf(buf_folder, sizeof(buf_folder), "frames_v%03d", next_idx);
+    auto extract_dir = frames_root / buf_folder;
+    std::cout << "[FrameProcessor] Extracting frames to: " << extract_dir.string() << "\n";
+
+    return extract_dir.string();
 }
 
-// what's t_sec and now_ms? diff? 
-
-
-
 } // namespace vision
+ 
+/*               annotation logics ref
 
+    std::vector<BBox> all_persons, all_objects;
+    vision.getLastDetections(all_persons, all_objects);
+    cv::Mat vis = bgr.clone();
+    for (auto &p : all_persons) {
+        cv::rectangle(vis, p.rect, cv::Scalar(255,0,255), 2);
+        std::string label = "person " + std::to_string(int(p.conf * 100)) + "%";
+        cv::putText(vis, label, cv::Point(p.rect.x, p.rect.y - 5),
+        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255,0,255), 1);
+    }
+    for (auto &o : all_objects) {
+        cv::rectangle(vis, o.rect, cv::Scalar(255,255,0), 2);
+        std::string label = o.cls_name + " " + std::to_string(int(o.conf * 100)) + "%";
+        cv::putText(vis, label, cv::Point(o.rect.x, o.rect.y - 5),
+        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255,255,0), 1);
+    }
+
+*/
+
+
+// ============== below to be discarded =============
+
+/*
 // =============================== 新增: 批量提取与目录采样处理 ===============================
 // 仅新增, 不修改/删除现有代码与注释。以下方法位于第一个命名空间内。
 
-namespace vision {
 
-// 统计目录下文件数量(可按需过滤图片扩展名)
-static size_t countFilesInDir(const std::string& dir_path) {
-    std::error_code error_code;
-    if (!std::filesystem::exists(dir_path, error_code) || !std::filesystem::is_directory(dir_path, error_code)) return 0;  // no dire exists || not a path
-    size_t cnt = 0;
-    for (auto& entry : std::filesystem::directory_iterator(dir_path, error_code)) {
-        if (error_code) break;
-        if (!entry.is_regular_file()) continue;
-        ++cnt;
-    }
-    return cnt;
-}
-
-// 统计目录下图片文件数量(.jpg/.jpeg/.png)
-static size_t countImageFilesInDir(const std::string& dir_path) {
-    std::error_code error_code;
-    if (!std::filesystem::exists(dir_path, error_code) || !std::filesystem::is_directory(dir_path, error_code)) return 0;   // no dire exists || not a path
-    size_t cnt = 0;
-    for (auto& entry : std::filesystem::directory_iterator(dir_path, error_code)) {
-        if (error_code) break;
-        if (!entry.is_regular_file()) continue;
-        auto ext = entry.path().extension().string();                   // extension name of the entry file with dot
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == ".jpg" || ext == ".jpeg" || ext == ".png") ++cnt;
-    }
-    return cnt;
-}
-
-// 根据总图片数确定默认采样步长: <=500 => 5; <=1000 => 10; 否则 50
-static int getStepsize(size_t image_count) {
-    if (image_count <= 500) return 5;
-    if (image_count <= 1000) return 10;
-    return 50;
-}
-
-// 将 sample_fp100 (每100张取多少) 转为步长: step = floor(100 / sample_fp100), 最小为1
-static int step_from_sample_fp100(int sample_fp100) {
-    if (sample_fp100 <= 0) return 1;
-    if (sample_fp100 > 100) sample_fp100 = 20; // 超过100则按安全默认20 fp100
-    int step = static_cast<int>(std::floor(100 / sample_fp100));
-    return step < 1 ? 1 : step;
-}
-
-// 批量提取: 从视频按 fps 抽帧写入目录; 读取失败累计3次则中止
-size_t FrameProcessor::bulkExtraction(
-    const std::string& video_path,
-    const std::string& out_dir,
-    double extract_fps,
-    int start_frame,
-    int end_frame,
-    int jpeg_quality,
-    const std::string& filename_prefix
-) {
-    std::error_code error_code;
-    std::filesystem::create_directories(out_dir, error_code);
-    if (error_code) {
-        std::cerr << "[FrameProcessor] bulkExtraction create dir failed: " << out_dir << " : " << error_code.message() << "\n";
-        return 0;
-    }
-
-    cv::VideoCapture cap(video_path);
-    if (!cap.isOpened()) {
-        std::cerr << "[FrameProcessor] bulkExtraction open failed: " << video_path << "\n";
-        return 0;
-    }
-
-    int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
-    double original_fps = cap.get(cv::CAP_PROP_FPS);
-    if (end_frame < 0 && total_frames > 0) end_frame = total_frames - 1;
-    if (start_frame < 0) start_frame = 0;
-    if (end_frame >= 0 && end_frame < start_frame) end_frame = start_frame;
-
-    int sample_stepsize = 1;
-    if (extract_fps > 0.0 && original_fps > 0.0) {
-        sample_stepsize = static_cast<int>(std::floor(original_fps / extract_fps));
-        if (sample_stepsize < 1) sample_stepsize = 1;
-    }
-
-    std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, std::clamp(jpeg_quality, 1, 100) };
-
-    size_t saved = 0;
-    int consecutive_failures = 0;
-    for (int idx = start_frame; end_frame < 0 ? true : (idx <= end_frame); idx += sample_stepsize) {
-        cap.set(cv::CAP_PROP_POS_FRAMES, idx);
-        cv::Mat bgr;
-        if (!cap.read(bgr) || bgr.empty()) {
-            std::cerr << "[FrameProcessor] bulkExtraction read failed at frame index " << idx << "\n";
-            ++consecutive_failures;
-            if (consecutive_failures >= 3) {
-                std::cerr << "[FrameProcessor] bulkExtraction stopping due to 3 consecutive read failures.\n";
-                break;
-            }
-            continue;
-        }
-        consecutive_failures = 0;
-
-        std::ostringstream oss;
-        oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg";
-        fs::path out_path = fs::path(out_dir) / oss.str();
-        if (!cv::imwrite(out_path.string(), bgr, params)) {
-            std::cerr << "[FrameProcessor] bulkExtraction imwrite failed: " << out_path.string() << "\n";
-        } else {
-            ++saved;
-        }
-    }
-    return saved;
-}
-
-// 批量处理: 先抽帧, 再按规则对目录内帧进行采样处理
-size_t FrameProcessor::bulkProcess(
-    const std::string& video_path,
-    const std::string& out_dir,
-    double extract_fps,
-    int start_frame,
-    int end_frame,
-    int jpeg_quality,
-    const std::string& filename_prefix,
-    int sample_fp100,
-    const std::function<bool(int, const cv::Mat&, double)>& onFrame_simple,
-    size_t max_process_frames
-) {
-    size_t saved = bulkExtraction(video_path, out_dir, extract_fps, start_frame, end_frame, jpeg_quality, filename_prefix);
-    if (saved == 0) return 0;
-
-    // 计算目录内图片数量
-    size_t image_count = countImageFilesInDir(out_dir);
-
-    // 目录采样步长
-    int step = 1;
-    if (sample_fp100 > 0) step = step_from_sample_fp100(sample_fp100);
-    else step = getStepsize(image_count);
 
     // 构建文件列表(排序保证顺序处理)
     std::vector<fs::path> files;
@@ -742,84 +703,13 @@ size_t FrameProcessor::bulkProcess(
     for (auto &e : fs::directory_iterator(out_dir)) {
         if (!e.is_regular_file()) continue;
         auto ext = e.path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(,ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext == ".jpg" || ext == ".jpeg" || ext == ".png") files.push_back(e.path());
     }
     std::sort(files.begin(), files.end());
 
-    size_t processed = 0;
-    int consecutive_read_failures = 0;
-    for (size_t i = 0; i < files.size(); i += static_cast<size_t>(step)) {
-        if (max_process_frames > 0 && processed >= max_process_frames) break;
-        cv::Mat bgr = cv::imread(files[i].string());
-        if (bgr.empty()) {
-            std::cerr << "[FrameProcessor] bulkProcess imread failed: " << files[i].string() << "\n";
-            ++consecutive_read_failures;
-            if (consecutive_read_failures >= 3) {
-                std::cerr << "[FrameProcessor] bulkProcess stopping due to 3 consecutive read failures.\n";
-                break;
-            }
-            continue;
-        }
-        consecutive_read_failures = 0;
 
-        if (onFrame_simple) {
-            // 这里 t_sec 用 0.0, 如需精准时间可在文件名或外部映射中提供
-            if (!onFrame_simple(static_cast<int>(i), bgr, 0.0)) break;
-        }
-        ++processed;
-    }
-    return processed;
-}
 
-// 目录图像处理(仅目录, 可指定 sample_fp100); 若 sample_fp100<=0 则按数量规则自动取步长
-size_t FrameProcessor::imageProcess(
-    const std::string& image_dir,
-    int sample_fp100,
-    const std::function<bool(int, const cv::Mat&, double)>& onFrame_simple,
-    size_t max_process_frames
-) {
-    size_t image_count = countImageFilesInDir(image_dir);
-    int step = (sample_fp100 > 0) ? step_from_sample_fp100(sample_fp100)
-                                  : getStepsize(image_count);
-
-    std::vector<fs::path> files;
-    files.reserve(image_count);
-    std::error_code ec;
-    for (auto &e : fs::directory_iterator(image_dir, ec)) {
-        if (ec) break;
-        if (!e.is_regular_file()) continue;
-        auto ext = e.path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == ".jpg" || ext == ".jpeg" || ext == ".png") files.push_back(e.path());
-    }
-    std::sort(files.begin(), files.end());
-
-    size_t processed = 0;
-    int consecutive_read_failures = 0;
-    for (size_t i = 0; i < files.size(); i += static_cast<size_t>(step)) {
-        if (max_process_frames > 0 && processed >= max_process_frames) break;
-        cv::Mat bgr = cv::imread(files[i].string());
-        if (bgr.empty()) {
-            std::cerr << "[FrameProcessor] imageProcess imread failed: " << files[i].string() << "\n";
-            ++consecutive_read_failures;
-            if (consecutive_read_failures >= 3) {
-                std::cerr << "[FrameProcessor] imageProcess stopping due to 3 consecutive read failures.\n";
-                break;
-            }
-            continue;
-        }
-        consecutive_read_failures = 0;
-
-        if (onFrame_simple) {
-            if (!onFrame_simple(static_cast<int>(i), bgr, 0.0)) break;
-        }
-        ++processed;
-    }
-    return processed;
-}
-
-} // namespace vision (added methods)
 
 // =============================== 新增: 采样映射与按需回取功能 ===============================
 // 说明: 为满足后续 B 返回关键采样序号后, 从原视频中重新获取对应原始帧用于延迟绘制的需求。
@@ -839,6 +729,29 @@ static int mapSampleIndexToOriginalFrame(int sample_index, double original_fps, 
     int original_frame = static_cast<int>(std::llround(target_time_sec * original_fps));
     if (original_frame < 0) original_frame = 0;
     return original_frame;
+}
+
+
+// 直接按原始帧号列表回取 (适用于已经返回的是原视频帧号而非采样序号)
+bool fetchFramesByOriginalIndices(const std::string& video_path,
+                                  const std::vector<int>& original_indices,
+                                  std::vector<cv::Mat>& out_frames) {
+    out_frames.clear();
+    cv::VideoCapture cap(video_path);
+    if (!cap.isOpened()) {
+        std::cerr << "[FrameProcessor] fetchFramesByOriginalIndices open failed: " << video_path << "\n";
+        return false;
+    }
+    for (int idx : original_indices) {
+        int target = idx < 0 ? 0 : idx;
+        cap.set(cv::CAP_PROP_POS_FRAMES, target);
+        cv::Mat frame;
+        if (!cap.read(frame)) {
+            std::cerr << "[FrameProcessor] read failed at original frame " << target << "\n";
+        }
+        out_frames.push_back(frame);
+    }
+    return true;
 }
 
 // 批量映射采样序号到原视频帧号
@@ -905,171 +818,6 @@ bool fetchFramesBySampleIndices(const std::string& video_path,
     return true;
 }
 
-// 直接按原始帧号列表回取 (适用于 B 已经返回的是原视频帧号而非采样序号)
-bool fetchFramesByOriginalIndices(const std::string& video_path,
-                                  const std::vector<int>& original_indices,
-                                  std::vector<cv::Mat>& out_frames) {
-    out_frames.clear();
-    cv::VideoCapture cap(video_path);
-    if (!cap.isOpened()) {
-        std::cerr << "[FrameProcessor] fetchFramesByOriginalIndices open failed: " << video_path << "\n";
-        return false;
-    }
-    for (int idx : original_indices) {
-        int target = idx < 0 ? 0 : idx;
-        cap.set(cv::CAP_PROP_POS_FRAMES, target);
-        cv::Mat frame;
-        if (!cap.read(frame)) {
-            std::cerr << "[FrameProcessor] read failed at original frame " << target << "\n";
-        }
-        out_frames.push_back(frame);
-    }
-    return true;
-}
-
 } // end extra namespace vision block
 
-// =============================== 新增: 单帧提取与包装流式/批量处理 ===============================
-// 说明: 依据用户在文件中的笔记需求, 我们不修改既有代码与注释,
-// 仅在此追加新的 helper 与包装方法, 命名与变量风格遵循用户约定。
-
-namespace vision {
-
-// 单帧提取 helper: 通过原视频帧号读取一帧并返回
-// video_path: 原视频路径
-// frame_index: 目标原始帧号 (>=0)
-// out_bgr: 输出 BGR 图像
-// 返回: 是否读取成功
-bool extractSingleFrame(const std::string& video_path, int frame_index, cv::Mat& out_bgr) {
-    out_bgr.release();
-    cv::VideoCapture cap(video_path);
-    if (!cap.isOpened()) {
-        std::cerr << "[FrameProcessor] extractSingleFrame open failed: " << video_path << "\n";
-        return false;
-    }
-    int target = frame_index < 0 ? 0 : frame_index;
-    cap.set(cv::CAP_PROP_POS_FRAMES, target);
-    cv::Mat bgr;
-    if (!cap.read(bgr)) {
-        std::cerr << "[FrameProcessor] extractSingleFrame read failed at frame " << target << "\n";
-        return false;
-    }
-    out_bgr = bgr;
-    return true;
-}
-
-// 流式处理包装: 使用单帧提取 helper, 然后交给 onFrame
-// 注意: 不修改原阈值/采样设定; 只调用现有的采样频率变量约定 (由调用侧传入)
-// 参数:
-// - video_path: 原视频
-// - onFrame: 与现有 iterate 相同签名的回调 (idx, bgr, t_sec)
-// - sample_fps: 采样频率 (<=0 表示每帧)
-// - start_frame, end_frame: 起止原始帧号, 与现有语义一致
-// 返回: 处理的帧数
-size_t streamProcess(const std::string& video_path,
-                               //const std::function<bool(int, const cv::Mat&, double)>& onFrame,
-                               bool static onFrame(
-                                int frame_index, 
-                                const cv::Mat& bgr, 
-                                double /*t_sec*/, 
-                                int64_t now_ms,
-                                const std::filesystem::path& input_path,
-                                const std::string& video_src_path,
-                                std::ofstream& ofs,
-                                const VisionConfig& cfg,
-                                VisionA& vision,
-                                const std::string& latest_frame_file,
-                                size_t& processed)
-                               double sample_fps,
-                               int start_frame,
-                               int end_frame) {
-    cv::VideoCapture cap(video_path);
-    if (!cap.isOpened()) {
-        std::cerr << "[FrameProcessor] streamProcess open failed: " << video_path << "\n";
-        return 0;
-    }
-    double raw_fps = cap.get(cv::CAP_PROP_FPS);
-    bool do_sample = sample_fps > 0.0;
-    double sample_interval = do_sample ? (1.0 / sample_fps) : 0.0;
-    double next_sample_t = 0.0;
-
-    int idx = start_frame < 0 ? 0 : start_frame;
-    size_t processed = 0;
-    for (;;) {
-        if (end_frame >= 0 && idx > end_frame) break;
-        // 单帧提取
-        cv::Mat bgr;
-        if (!extractSingleFrame(video_path, idx, bgr)) break;
-        // 时间戳 (优先 POS_MSEC, 否则 idx/raw_fps)
-        cap.set(cv::CAP_PROP_POS_FRAMES, idx);
-        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
-        double t_sec = (!std::isnan(t_ms) && t_ms > 0.0) ? (t_ms / 1000.0)
-                        : ((raw_fps > 0.0) ? (static_cast<double>(idx) / raw_fps) : 0.0);
-
-        bool take = !do_sample;
-        if (!take) {
-            if (t_sec + 1e-9 >= next_sample_t) {
-                take = true;
-                while (next_sample_t <= t_sec) next_sample_t += sample_interval;
-            }
-        }
-        if (take) {
-            ++processed;
-            if (!onFrame_(int frame_index, const cv::Mat& bgr, double /*t_sec*/, int64_t now_ms, 
-                const std::filesystem::path& input_path, const std::string& video_src_path, std::ofstream& ofs,
-                const VisionConfig& cfg, VisionA& vision, const std::string& latest_frame_file, size_t& processed)) 
-                break;
-        }
-        ++idx;
-    }
-    return processed;
-}
-
-// 批量处理包装: 按采样频率批量选择原始帧号, 用单帧 helper 读取后再 onFrame
-// 注意: 计算机内存/IO 限制, 此方法逐帧读取并立即回调, 不做大规模缓冲; 不修改原阈值
-// 参数与返回与上面一致
-size_t bulkExtractWithSampling(const std::string& video_path,
-                               const std::function<bool(int, const cv::Mat&, double)>& onFrame,
-                               double sample_fps,
-                               int start_frame,
-                               int end_frame) {
-    cv::VideoCapture cap(video_path);
-    if (!cap.isOpened()) {
-        std::cerr << "[FrameProcessor] bulkExtractWithSampling open failed: " << video_path << "\n";
-        return 0;
-    }
-    double raw_fps = cap.get(cv::CAP_PROP_FPS);
-    bool do_sample = sample_fps > 0.0;
-    double sample_interval = do_sample ? (1.0 / sample_fps) : 0.0;
-    double next_sample_t = 0.0;
-
-    int idx = start_frame < 0 ? 0 : start_frame;
-    size_t processed = 0;
-    for (;;) {
-        if (end_frame >= 0 && idx > end_frame) break;
-        // 单帧提取
-        cv::Mat bgr;
-        if (!extractSingleFrame(video_path, idx, bgr)) break;
-        // 时间戳 (优先 POS_MSEC, 否则 idx/raw_fps)
-        cap.set(cv::CAP_PROP_POS_FRAMES, idx);
-        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
-        double t_sec = (!std::isnan(t_ms) && t_ms > 0.0) ? (t_ms / 1000.0)
-                        : ((raw_fps > 0.0) ? (static_cast<double>(idx) / raw_fps) : 0.0);
-
-        bool take = !do_sample;
-        if (!take) {
-            if (t_sec + 1e-9 >= next_sample_t) {
-                take = true;
-                while (next_sample_t <= t_sec) next_sample_t += sample_interval;
-            }
-        }
-        if (take) {
-            ++processed;
-            if (!onFrame(idx, bgr, t_sec)) break;
-        }
-        ++idx;
-    }
-    return processed;
-}
-
-} // namespace vision
+*/
