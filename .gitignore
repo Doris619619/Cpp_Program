@@ -1,0 +1,27 @@
+# 1. 编译产物（C/C++项目核心忽略，避免推送可执行文件和中间产物）
+build/                  # 你的CMake编译目录（含b_module_standalone可执行文件）
+*.o                     # 编译生成的目标文件
+*.exe                   # Windows可执行文件
+*.out                   # Linux/macOS可执行文件
+b_module_standalone     # 你的B模块独立运行程序
+
+# 2. 临时数据（本地测试用，C同学无需获取）
+runtime/                # 存储last_frame.json的临时目录
+data/frames/            # 存储测试图像的目录
+seat_states.jsonl.bak   # JSONL备份文件
+*.log                   # 日志文件（如数据库操作日志）
+
+# 3. 数据库相关（避免推送本地数据库文件）
+*.db                    # SQLite数据库文件（如seat_system.db）
+../database/            # C模块默认的数据库目录（参考SeatDatabase.h的默认路径）
+
+# 4. IDE配置文件（避免IDE差异导致冲突）
+.idea/                  # CLion配置
+.vscode/*.code-workspace # VS Code工作区文件
+.vscode/extensions.json  # VS Code插件配置
+.DS_Store               # macOS系统文件
+Thumbs.db               # Windows系统文件
+
+# 5. 依赖库冗余（仅保留必要的头文件，避免推送整个库）
+third_party/*           # 若third_party下有其他库，仅保留nlohmann（可手动调整）
+!third_party/nlohmann/  # 例外：保留JSON库（C同学需要）
