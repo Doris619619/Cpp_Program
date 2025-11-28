@@ -1,0 +1,3 @@
+F:\MSYS2\mingw64\bin\cmake.exe -E rm -f CMakeFiles\SmartSeatingSystem.dir/objects.a
+C:\Users\lenovo\mingw64\bin\ar.exe qc CMakeFiles\SmartSeatingSystem.dir/objects.a @CMakeFiles\SmartSeatingSystem.dir\objects1.rsp
+C:\Users\lenovo\mingw64\bin\c++.exe -g -Wl,--whole-archive CMakeFiles\SmartSeatingSystem.dir/objects.a -Wl,--no-whole-archive -o SmartSeatingSystem.exe -Wl,--out-implib,libSmartSeatingSystem.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\SmartSeatingSystem.dir\linkLibs.rsp

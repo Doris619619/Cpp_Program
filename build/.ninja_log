@@ -1,0 +1,16 @@
+# ninja log v7
+4	981	7856096544560607	CMakeFiles/SmartSeatingSystem.dir/src/main.cpp.obj	279980255c9fef1f
+20	873	7856096544708340	CMakeFiles/SmartSeatingSystem.dir/src/utils/TimeUtils.cpp.obj	5d96b6ef992f8e26
+10	982	7856096544560607	CMakeFiles/SmartSeatingSystem.dir/src/database/DatabaseInitializer.cpp.obj	77fc75a7fd90d866
+14	1617	7856096544629841	CMakeFiles/SmartSeatingSystem.dir/src/analysis/Analyzer.cpp.obj	2c0fd789b30448bf
+7	1811	7856096544560607	CMakeFiles/SmartSeatingSystem.dir/src/database/SeatDatabase.cpp.obj	ff2641a121a41b95
+1812	1985	7856096562624584	SmartSeatingSystem.exe	291a5d4b131a3477
+2	13	7856072307123727	clean	86bd36138797d3b9
+3	125	7856101322552138	build.ninja	1fea4b1957c07c09
+3	125	7856101322552138	C:/Users/lenovo/SmartSeatingSystem/build/cmake_install.cmake	1fea4b1957c07c09
+33	803	7856101388978982	CMakeFiles/SmartSeatingSystem.dir/src/utils/TimeUtils.cpp.obj	5d96b6ef992f8e26
+19	913	7856101388844778	CMakeFiles/SmartSeatingSystem.dir/src/database/DatabaseInitializer.cpp.obj	77fc75a7fd90d866
+7	924	7856101388727214	CMakeFiles/SmartSeatingSystem.dir/src/main.cpp.obj	279980255c9fef1f
+25	1501	7856101388913862	CMakeFiles/SmartSeatingSystem.dir/src/analysis/Analyzer.cpp.obj	2c0fd789b30448bf
+13	1708	7856101388796044	CMakeFiles/SmartSeatingSystem.dir/src/database/SeatDatabase.cpp.obj	ff2641a121a41b95
+1709	1878	7856101405734935	SmartSeatingSystem.exe	291a5d4b131a3477
