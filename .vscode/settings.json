@@ -86,7 +86,11 @@
         "xutility": "cpp",
         "bitset": "cpp",
         "csignal": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "condition_variable": "cpp",
+        "cstdarg": "cpp",
+        "expected": "cpp",
+        "typeindex": "cpp"
     },
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",

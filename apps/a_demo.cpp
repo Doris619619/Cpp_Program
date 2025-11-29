@@ -46,6 +46,9 @@ int main(int argc, char** argv) {
     std::set<std::string> on_bag = {"1", "true", "True", "t", "T", "yes", "y", "on", "On", "ON", "v", "V"};
     std::set<std::string> off_bag = {"0", "false", "False", "f", "F", "no", "n", "off", "Off", "OFF", "x", "X"};
     
+    //cv::setNumThreads(1);  // disable multithreading to avoid oneTBB/parallel backend DLL dependency issues
+    //cv::setUseOptimized(false);  // disable OpenCV optimizations to avoid oneTBB/parallel backend DLL dependency issues
+
     // anal args
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -138,33 +141,22 @@ int main(int argc, char** argv) {
         std::cout << "Callback batch size = " << states.size() << "\n";
     });
     vision.setPublisher(&pub);
-    // note: 上面在count之后的processFrame会在count输出之前就输出一堆info，
-    //        其中包含不少failed的情况，疑似与.dll有关，需要纠正；后续输出都正常进行
 
     // create output path (skip if no parent path included)
     int64_t frame_index = 0;                                             // index of img handled this patch
     auto output_state_parent_path = std::filesystem::path(out_states_path).parent_path();  // parent path of the output file
-    // ================== DIAG BLOCK (ADDED ONLY, NO ORIGINAL CODE REMOVED) ==================
-    // 问题根因: 这里原逻辑只在 parent_path.empty() 时才尝试创建目录。
-    // 但正常的路径如 ".\\runtime\\seat_states.jsonl" 的 parent_path = "runtime" 并非 empty, 因此不会创建目录。
-    // 若 "runtime" 目录尚不存在, 后续 ofstream 打开文件失败, 程序在 if(!ofs) 分支 return 1 提前退出 → imageProcess 根本不执行写入。
-    // 这解释了你看到的 Exit Code = 1 以及 jsonl 无任何追加记录的现象, 与采样是否注释无关。
-    // 修复建议(保持不修改原代码, 仅注释呈现): 将判断条件改为 "if (!output_state_parent_path.empty())" 并在其中 create_directories,
-    // 或者更直接: 只要 parent_path 非空就创建, 并在失败时报错。示例修正代码如下: 
-    // -----------------------------------------------------------------------------
-     std::error_code ec_create;
-     if (!output_state_parent_path.empty()) {
-         std::filesystem::create_directories(output_state_parent_path, ec_create);
-         if (ec_create) {
-             std::cerr << "[Main] Failed to create output state directory: "
-                       << output_state_parent_path.string() << " : " << ec_create.message() << "\n";
-             return 1;
-         }
-     }
-    // -----------------------------------------------------------------------------
-    // 如果你允许新增有效代码行, 可将上面块取消注释; 当前保持仅新增注释不影响现有逻辑。
-    // ================================================================================
-    if (output_state_parent_path.empty()) {     // 原逻辑: 只有 parent 为空才创建, 一般不会执行
+
+    // std::error_code error_code;
+    // if (!output_state_parent_path.empty()) {
+    //     std::filesystem::create_directories(output_state_parent_path, error_code);
+    //     if (error_code) {
+    //         std::cerr << "[Main] Failed to create output state directory: "
+    //                   << output_state_parent_path.string() << " : " << error_code.message() << "\n";
+    //         return 1;
+    //     }
+    // }
+
+    if (output_state_parent_path.empty()) {     
         std::error_code error_code_;
         std::filesystem::create_directories(output_state_parent_path, error_code_);
         if (error_code_) {
@@ -176,20 +168,12 @@ int main(int argc, char** argv) {
     
     // open output states file (append mode)
     std::ofstream ofs(out_states_path, std::ios::app);
-    // DIAG: 如果这里打开失败, 原因 99% 是 parent 目录未创建 (见上面根因说明)。
-    // 可临时输出 parent 是否存在以验证:
-    // std::cerr << "[diag] parent exists? " << std::filesystem::exists(output_state_parent_path) << " path=" << output_state_parent_path.string() << "\n";
+
     if (!ofs) {                     // error check: open output states file
         std::cerr << "[Main] Failed to open output states file: " << out_states_path << "\n";
         return 1;
     }
-    // 修正建议: 不要在这里再拼接 "seat_states.jsonl" 否则日志显示的不是实际文件。
-    // 正确: std::filesystem::absolute(out_states_path).string()
-    //std::cout << "[Main] States output file: " << std::filesystem::absolute(out_states_path + "seat_states.jsonl").string() << "\n"; // 原输出(会重复拼接)
     std::cout << "[Main] States output file: " << std::filesystem::absolute(out_states_path).string() << "\n";
-    
-    // latest frame file directory
-    //std::string last_frame_file = (output_state_parent_path.empty() ? std::string("last_frame.json") : (output_state_parent_path / "last_frame.json").string());
     
     // frame annotated directory
     std::error_code error_code_marker;
@@ -222,6 +206,7 @@ int main(int argc, char** argv) {
             break;
     }
     std::cout << "[Main] Input type identified as: " << input_type_str << "\n";
+
     // Formal process
     size_t total_processed = 0;
     size_t total_errors = 0;
@@ -239,115 +224,7 @@ int main(int argc, char** argv) {
         
         // Images Processing (Directly, NO Extraction)
         if (input_type_str == "IMAGE") {  // process frame from img directory
-            /*
-            // use directory iterator to iterate the files / folders
-            for (auto &entry : std::filesystem::directory_iterator(input_path)) {    
-                // find nonEmpty bgr img
-                if (!entry.is_regular_file()) continue;
-                std::string src_path = entry.path().string();
-                cv::Mat bgr = cv::imread(src_path);
-                if (bgr.empty()) continue;
-                
-                try {    // process frames directly
-                    //// process frames
-                    auto states = vision.processFrame(bgr, now_ms(), frame_index++);
-                    
-                    //// output in CLI
-                    int64_t ts = states.empty() ? now_ms() : states.front().ts_ms;
-                    for (auto &s : states) {
-                        std::cout << s.seat_id << " " << toString(s.occupancy_state)
-                                  << " pc = " << s.person_conf_max
-                                  << " oc = " << s.object_conf_max
-                                  << " fg = " << s.fg_ratio
-                                  << " snap = " << (s.snapshot_path.empty() ? "-" : s.snapshot_path)
-                                  << "\n";
-                    }
 
-                    // record it for later used in annotation methods
-                    // visualize person/object detecting results in every frame
-                    std::vector<BBox> all_persons, all_objects;
-                    vision.getLastDetections(all_persons, all_objects);
-                    cv::Mat vis = bgr.clone();
-                    for (auto &p : all_persons) {    // viusalize person boxes
-                        cv::rectangle(vis, p.rect, cv::Scalar(255,0,255), 2);
-                        std::string label = "person " + std::to_string(int(p.conf * 100)) + "%";
-                        cv::putText(vis, label, cv::Point(p.rect.x, p.rect.y - 5),
-                                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255,0,255), 1);
-                    }
-                    for (auto &o : all_objects) {    // visualize object boxes
-                        cv::rectangle(vis, o.rect, cv::Scalar(255,255,0), 2);
-                        std::string label = o.cls_name + " " + std::to_string(int(o.conf * 100)) + "%";
-                        cv::putText(vis, label, cv::Point(o.rect.x, o.rect.y - 5),
-                                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255,255,0), 1);
-                    }
-                    
-                    //// visualize seat states
-                    auto color_for_state = [](SeatOccupancyState state){
-                        switch(state){
-                            case SeatOccupancyState::PERSON:        return cv::Scalar(0,0,255);
-                            case SeatOccupancyState::OBJECT_ONLY:   return cv::Scalar(0,255,255);
-                            case SeatOccupancyState::FREE:          return cv::Scalar(0,255,0);
-                            default:                                return cv::Scalar(200,200,200);
-                        }
-                    };
-                    for (auto &state : states) {
-                        auto color = color_for_state(state.occupancy_state);
-                        if (state.seat_poly.size() >= 3) {  // draw polygon contour
-                            std::vector<std::vector<cv::Point>> contours = { state.seat_poly };  // contour of polygon
-                            cv::polylines(vis, contours, true, color, 3);
-                            cv::Moments moment = cv::moments(state.seat_poly);
-                            if (moment.m00 != 0) {
-                                cv::Point center(static_cast<int>(moment.m10 / moment.m00), static_cast<int>(moment.m01 / moment.m00));
-                                std::string seat_label = "S" + std::to_string(state.seat_id) + " " + toString(state.occupancy_state);
-                                cv::putText(vis, seat_label, center,
-                                           cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2);
-                            }
-                        } else {         // fallback to rectangle if no effective polygon
-                            cv::rectangle(vis, state.seat_roi, color, 3);
-                            std::string seat_label = "Seat " + std::to_string(state.seat_id) + " " + toString(state.occupancy_state);
-                            cv::putText(vis, seat_label, cv::Point(state.seat_roi.x, state.seat_roi.y - 10),
-                                       cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2);
-                        }
-                    }
-                    
-                    //// save annotated img
-                    std::string file_name = entry.path().filename().string();
-                    std::string annotated_path = (std::filesystem::path(cfg.annotated_frames_dir) / file_name).string();
-                    
-                    //// skipping saving imgs
-                    if (annotated_save_cnt < max_process_frames 
-                        && annotated_save_cnt % annotated_save_freq == 0) {
-                        ++annotated_save_cnt;
-                        cv::imwrite(annotated_path, vis);    // write annotated img to specific path
-                    } else if (annotated_save_cnt >= max_process_frames) {
-                        std::cout << "Count of saved annotated images reached max saving frames limits: " << max_process_frames << "\n";
-                    }
-                    
-                    std::string line = seatFrameStatesToJsonLine(states, ts, frame_index-1, src_path, annotated_path);
-                    ofs << line << "\n";
-                    { // update latest frame to .jsonl file
-                        std::ofstream lf(last_frame_file, std::ios::trunc);
-                        if (lf) lf << line << "\n";
-                    }
-                    ++total_processed;
-                    if (total_processed % print_every == 0) {  // processed progress & error cnt print
-                        std::cout << "[progress] processed=" << total_processed << " errors=" << total_errors << "\n";
-                    }
-                    if (total_processed >= max_process_frames) { // max process frames cnt check
-                        std::cout << "Reached --max limit " << max_process_frames << "; stopping directory iteration.\n";
-                        break;
-                    }
-
-                } catch (const std::exception &exception) {  // catch exceptions per frame process
-                    ++total_errors;
-                    std::cerr << "Frame error: " << exception.what() << " src=" << src_path << "\n";
-                } catch (...) {
-                    ++total_errors;
-                    std::cerr << "Frame error: unknown src=" << src_path << "\n";
-                }
-            }
-            */
-            
             // conduct processing via imageProcess
             size_t processed = vision::FrameProcessor::imageProcess(
                 input_path_string,                  // images directory path string
@@ -359,6 +236,9 @@ int main(int argc, char** argv) {
                 100,                                 // frames to sample per 100 images
                 0                                   // original total index offset (will recheck cnt of all images in directory if 0 provided)
             );
+
+            // output processed frames cnt
+            std::cout << "[Main] Processed image frames: " << processed << "\n";
 
             // publish record
 
@@ -374,13 +254,6 @@ int main(int argc, char** argv) {
 
             // Streaming Process video: Extract and Process Frame-by-Frame from Video
             if (stream_video) { 
-                /* Note: Here the iterate func. will conduct the extraction,
-                    onFrame is only an arg which has a type of boolean func. here.
-                    The onFrame func. is implemented here, and the iterate func. is
-                    implemneted in FrameExtraction.cpp. So the iterate func. need arg
-                    stream_video to decide its extraction way. The onFrame only 
-                    responsible for processing and decide whether continue sampling
-                */
 
                 // iterate over the video to extract & process frames 1-by-1
                 size_t processed = vision::FrameProcessor::streamProcess(
@@ -412,16 +285,16 @@ int main(int argc, char** argv) {
                 size_t processed = vision::FrameProcessor::bulkProcess(
                     input_path_string,                        // video_path
                     output_state_parent_path.string(),        // latest_frame_dir (for last_frame.json)
-                    cfg,
-                    ofs,
-                    vision,
+                    cfg,                                      // VisionConfig
+                    ofs,                                      // output file stream
+                    vision,                                   // VisionA
                     extract_fps,                               // sample_fps
-                    0,
-                    -1,
+                    0,                                        // start_frame_idx
+                    -1,                                       // end_frame_idx (-1: all frames)
                     std::string("./data/frames"),             // img_dir to store extracted frames
-                    max_process_frames,
-                    95,
-                    "f_"
+                    max_process_frames,                       // max_process_frames
+                    95,                                       // jpg_quality
+                    "f_"                                      // filename_prefix
                 );
 
                 // output processed frames cnt

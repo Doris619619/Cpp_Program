@@ -54,6 +54,9 @@ bool vision::FrameProcessor::onFrame(
     const std::string& latest_frame_file,
     size_t& processed
 ) {
+    // report onFrame
+    std::cout << "[FrameProcessor] onFrame called for frame index: " << frame_index << ". Start processing..." << "\n";
+
     // process frame
     auto states = vision.processFrame(bgr, now_ms, frame_index++);
 
@@ -271,6 +274,10 @@ size_t vision::FrameProcessor::bulkExtraction(
         std::ostringstream oss;
         oss << filename_prefix << std::setw(6) << std::setfill('0') << idx << ".jpg"; // img: prefix + 000000 + .jpg
         fs::path out_path = fs::path(actual_out_dir) / oss.str();
+
+        // write check
+        std::cout << "[FrameProcessor] bulkExtraction writing frame index " << idx << " to " << out_path.string() << "\n";
+
         if (!cv::imwrite(out_path.string(), bgr, params)) {
             std::cerr << "[FrameProcessor] bulkExtraction write failed: " << actual_out_dir << " at frame index " << idx << "\n";
         } else {
@@ -321,8 +328,23 @@ size_t vision::FrameProcessor::bulkProcess(
 ) {
     std::cout << "[FrameProcessor] Bulk extracting and processing video mode. Extraction to be begin...\n";
     
+    // check img dir
+    if (!std::filesystem::exists(img_dir)) {
+        std::filesystem::create_directories(img_dir);
+        std::cout << "[FrameProcessor] bulkProcess created img_dir: " << img_dir << "\n";
+    } else if (!std::filesystem::is_directory(img_dir)) {
+        std::cerr << "[FrameProcessor] bulkProcess img_dir is not a directory: " << img_dir << "\n";
+        return 1;
+    }
+    
+    std::string actual_img_dir = "./runtime/frames";
+    if (img_dir != "./runtime/frames") {
+        std::string actual_img_dir = "./runtime/frames";
+        std::cerr << "[FrameProcessor] bulkProcess default img_dir should be 'runtime/frames' to avoid conflicts: " << "\n";
+    }
+
     // bulk extract frames (with sample)
-    size_t extracted = bulkExtraction(video_path, sample_fps, img_dir, start_frame, end_frame, jpeg_quality, filename_prefix);
+    size_t extracted = bulkExtraction(video_path, sample_fps, actual_img_dir, start_frame, end_frame, jpeg_quality, filename_prefix);
     if (extracted == 0) return 0;
 
     // set stepsize 
@@ -346,16 +368,18 @@ size_t vision::FrameProcessor::bulkProcess(
     // process extracted frames
     size_t processed_cnt = 0;
     int consecutive_failures_cnt = 0;
+    // for (auto& entry : std::filesystem::directory_iterator(img_dir)) {
+    //     // check
     for (size_t idx = 0; idx < extracted; idx+=process_stepsize) {
         
         // check if img dir exists before processing
-        if (!std::filesystem::exists(std::filesystem::path(img_dir) / (filename_prefix + std::to_string(idx) + ".jpg"))) {  // img: prefix + 000000 + .jpg (idx at 000000)
-            std::cerr << "[FrameProcessor] bulkProcess imread failed: " << (std::filesystem::path(img_dir) / (filename_prefix + std::to_string(idx) + ".jpg")).string() << "\n";
+        if (!std::filesystem::exists(std::filesystem::path(img_dir))) {  // img: prefix + 000000 + .jpg (idx at 000000)
+            std::cerr << "[FrameProcessor] bulkProcess imread failed: " << std::filesystem::path(img_dir).string() << "\n";
             ++consecutive_failures_cnt;
-            if (consecutive_failures_cnt >= 3) {
-                std::cerr << "[FrameProcessor] bulkProcess stopping due to 3 consecutive read failures.\n";
-                break;
-            }
+        if (consecutive_failures_cnt >= 3) {
+            std::cerr << "[FrameProcessor] bulkProcess stopping due to 3 consecutive read failures.\n";
+            break;
+        }
             continue;
         }
         consecutive_failures_cnt = 0;
@@ -463,8 +487,8 @@ size_t vision::FrameProcessor::imageProcess(
 
         // sampling logic
         if (original_img_idx % sample_stepsize != 0) {
-            //++original_img_idx;
-            //continue;
+            ++original_img_idx;
+            continue;
         }
         ++original_img_idx; 
 
@@ -479,16 +503,16 @@ size_t vision::FrameProcessor::imageProcess(
             std::cerr << "[FrameProcessor] imageProcess imread exception: " << entry.path().string() << "\n";
             continue;
         }
+
+        // conduct imread
+        std::cout << "[FrameProcessor] Reading image: " << entry.path().string() << "\n";
+
         cv::Mat bgr = cv::imread(entry.path().string());
         // ================== DIAG (ADDED ONLY) ==================
-        // 若 imread 返回 empty:
-        // 1) 可能是路径或权限问题
-        // 2) 可能是运行时加载到错误的 OpenCV DLL (PATH 被 conda 覆盖), 导致编解码模块不可用
-        // 建议在此添加一次性日志, 便于确认是否全部失败导致 total_processed=0:
-         if (bgr.empty()) {
-             std::cerr << "[FrameProcessor][diag] imread empty: " << entry.path().string() << "\n";
-         }
-        //if (bgr.empty()) continue; // 原逻辑: 直接跳过, 不计入错误统计, 可能掩盖问题
+
+        if (bgr.empty()) {
+            std::cerr << "[FrameProcessor][diag] imread empty: " << entry.path().string() << "\n";
+        }
         // =======================================================
         
         // process frame with exception handling
@@ -497,6 +521,9 @@ size_t vision::FrameProcessor::imageProcess(
             int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             
+            // report processing
+            std::cout << "[FrameProcessor] Processing frame index: " << frame_index << "\n";
+
             // process frame via onFrame
             bool continue_process = FrameProcessor::onFrame(
                 frame_index,
@@ -510,25 +537,13 @@ size_t vision::FrameProcessor::imageProcess(
                 (std::filesystem::path(latest_frame_dir) / "last_frame.jsonl").string(),
                 total_processed
             );
-            // 说明: 这里传入的 input_path 用于 onFrame 内部 stem() 生成文件名前缀.
-            // 目前使用整个目录 path 的 stem, 会导致所有标注文件共享同一前缀, 难以对应原始图片。
-            // 建议替换为 entry.path() 以便 annotated_path 区分源文件.
-            // 示例替换(仅注释, 不改动原代码):
-            // bool continue_process = FrameProcessor::onFrame(
-            //     frame_index,
-            //     bgr,
-            //     0.0,
-            //     now_ms,
-            //     entry.path(),              // 每张图自己的文件名
-            //     annotated_frames_dir,
-            //     ofs,
-            //     vision,
-            //     (std::filesystem::path(latest_frame_dir) / "last_frame.jsonl").string(),
-            //     total_processed);
             
             ++frame_index;
             ++total_processed;
             
+            // report success in processing current image! 
+            std::cout << "[FrameProcessor] Processed image: " << entry.path().string() << ", total processed: " << total_processed << "\n";
+
             if (!continue_process || total_processed >= max_process_frames) {  // termination 
                 std::cout << "[FrameProcessor] Stopping at frame " << frame_index << " to be processed (the " << original_img_idx << " image in the directory)" << "\n"
                           << "                 onFrame reported: " << (continue_process ? ("frame " + std::to_string(frame_index) + " handled, max process amount reached.") 
@@ -545,14 +560,10 @@ size_t vision::FrameProcessor::imageProcess(
         }
     }
 
-    // TODO:
-    // original_img_idx - frame_index mapping relationship derival
-    // related to stepsize and total_frames
-
     std::cout << "[FrameProcessor] imageProcess completed: processed=" << total_processed << "\n                 "
               << "errors=" << total_errors << "\n                 "
               << "original total frames=" << total_frames << "\n                 "
-              << "stepsize to process the images: " << sample_stepsize << "\n                 "; 
+              << "stepsize to process the images: " << sample_stepsize << "\n"; 
     
     return total_processed;
 } 
@@ -611,7 +622,7 @@ int vision::FrameProcessor::getStepsize(size_t image_count, int sample_fp100) {
 
 // get extraction output directory
 std::string FrameProcessor::getExtractionOutDir(const std::string& out_dir){
-    std::filesystem::path frames_root = std::filesystem::path((out_dir.empty()) ? "data/frames" : out_dir);
+    std::filesystem::path frames_root = std::filesystem::path((out_dir.empty()) ? "./runtime/frames" : out_dir);
     std::error_code error_code;
     if (!std::filesystem::exists(out_dir)) { // output directory not exists
         std::filesystem::create_directories(frames_root, error_code);
@@ -621,28 +632,30 @@ std::string FrameProcessor::getExtractionOutDir(const std::string& out_dir){
         }
     }
     
-    int next_idx = 1;
-    for (auto &d : std::filesystem::directory_iterator(frames_root)) {
-        if (d.is_directory()) {
-            auto name = d.path().filename().string();
-            if (name.rfind("frames_v", 0) == 0) {
-                try { 
-                    int idx = std::stoi(name.substr(8)); 
-                    if (idx >= next_idx) next_idx = idx + 1; 
-                } catch (...) {
-                    std::cerr << "[FrameProcessor] getExtractionOutDir: invalid directory name found: " << name << "\n";
-                    return frames_root.string();
-                }
-            }
-        }
-    }
+    // int next_idx = 1;
+    // for (auto &d : std::filesystem::directory_iterator(frames_root)) {
+    //     if (d.is_directory()) {
+    //         auto name = d.path().filename().string();
+    //         if (name.rfind("frames_v", 0) == 0) {
+    //             try { 
+    //                 int idx = std::stoi(name.substr(8)); 
+    //                 if (idx >= next_idx) next_idx = idx + 1; 
+    //             } catch (...) {
+    //                 std::cerr << "[FrameProcessor] getExtractionOutDir: invalid directory name found: " << name << "\n";
+    //                 return frames_root.string();
+    //             }
+    //         }
+    //     }
+    // }
 
-    char buf_folder[32];
-    std::snprintf(buf_folder, sizeof(buf_folder), "frames_v%03d", next_idx);
-    auto extract_dir = frames_root / buf_folder;
-    std::cout << "[FrameProcessor] Extracting frames to: " << extract_dir.string() << "\n";
+    //char buf_folder[32];
+    //std::snprintf(buf_folder, sizeof(buf_folder), "frames_v%03d", next_idx);
+    //auto extract_dir = frames_root / buf_folder;
+    //std::cout << "[FrameProcessor] Extracting frames to: " << extract_dir.string() << "\n";
+    std::cout << "[FrameProcessor] Extracting frames to: " << frames_root.string() << "\n";
 
-    return extract_dir.string();
+    //return extract_dir.string();
+    return frames_root.string();
 }
 
 

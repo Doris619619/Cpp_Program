@@ -55,6 +55,9 @@ namespace vision {
             return dets;
         }
 
+        // ========= check ready ===========
+        std::cout << "[OrtYoloDetector] Checking if session is ready.\n";
+
         if (!session_ || !OrtYoloDetector::isReady()) return {};
         
         // ========= real infer 流程框架 ===========
@@ -62,12 +65,21 @@ namespace vision {
         // 1/ Get I/O node info (name, shape=[batch, channels, heights, widths])
         Ort::AllocatorWithDefaultOptions allocator;         // use allocator to derive the 
         
+        std::cout << "[OrtYoloDetector] Preparing input and output node info.\n";
+
         //      attain input node info ("images", [1, 3, 640, 640])
         Ort::AllocatedStringPtr input_name_ptr = session_->GetInputNameAllocated(0, allocator);
         const char* input_name = input_name_ptr.get();      // "images"
         Ort::TypeInfo input_type_info = session_->GetInputTypeInfo(0);
         auto input_tensor_shape = input_type_info.GetTensorTypeAndShapeInfo().GetShape();
         
+        std::cout << "[OrtYoloDetector] Input tensor shape: [";
+        for (size_t i = 0; i < input_tensor_shape.size(); ++i) {
+            std::cout << input_tensor_shape[i];
+            if (i < input_tensor_shape.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]\n";
+
         //      attain output node info ("output0", [1, 84, 8400])
         Ort::AllocatedStringPtr output_name_ptr = session_->GetOutputNameAllocated(0, allocator);
         const char* output_name = output_name_ptr.get();    // "output0"
@@ -79,6 +91,8 @@ namespace vision {
                  << resized_rgb.cols << " and height " << resized_rgb.rows << "." << std::endl;
             return {};
         }
+
+        std::cout << "[OrtYoloDetector] Preprocessing input image.\n";
 
         cv::Mat rgb;
         cv::cvtColor(resized_rgb, rgb, cv::COLOR_BGR2RGB);  // BGR → RGB
@@ -104,6 +118,8 @@ namespace vision {
             input_shape.size()          // size_t shape_len
         );
 
+        std::cout << "[OrtYoloDetector] Running inference.\n";
+
         // 4/ Inference run
         std::vector<const char*> input_names = {input_name};
         std::vector<const char*> output_names = {output_name};
@@ -112,6 +128,8 @@ namespace vision {
             input_names.data(),  &input_tensor, 1,  // input name, tensor, cnt
             output_names.data(), 1                  // output count, cnt
         );
+
+        std::cout << "[OrtYoloDetector] Inference completed. Processing output tensors.\n";
 
         // 5/ Analysis output tensors
         float* output_data = output_tensors[0].GetTensorMutableData<float>();
@@ -123,10 +141,15 @@ namespace vision {
         int num_boxes = static_cast<int>(output_shape[2]);  // 8400 boxes
         int num_attrs = static_cast<int>(output_shape[1]);  // 84 = 4([center_x, center_y, width, height]) + 80(COCO classes conf score)
         
+        std::cout << "[OrtYoloDetector] Number of boxes: " << num_boxes << ", Number of attributes: " << num_attrs << "\n";
+
         // 6/ Postprocess and return detections
         //       decode and filter boxes
         std::vector<RawDet> detect_results;
         const float conf_threshold = 0.25f;
+
+        std::cout << "[OrtYoloDetector] Postprocessing output to extract detections.\n";
+
         for (int i = 0; i < num_boxes; ++i) {
             // YOLOv8 output layout: each column is a box, first 4 rows are [cx,cy,w,h], last 80 rows are class scores
             float cx = output_data[i];                      // center x (relative to 640*640)
@@ -134,16 +157,29 @@ namespace vision {
             float w  = output_data[2 * num_boxes + i];      // width
             float h  = output_data[3 * num_boxes + i];      // height
 
+            //std::cout << "[OrtYoloDetector] Box " << i << ": cx=" << cx << ", cy=" << cy << ", w=" << w << ", h=" << h << "\n";
+
             // compute max class conf
             float max_class_score = 0.0f;
             int max_class_id = -1;
-            for (int c = 0; c < 80; ++c) {  // 80 COCO classes
+
+            //std::cout << "[OrtYoloDetector] Finding max class score for box " << i << ".\n";
+
+            for (int c = 0; c < 18; ++c) {  // 80 COCO classes
                 float score = output_data[(4 + c) * num_boxes + i];
+
+                //std::cout << "[OrtYoloDetector] Class " << c << " score for box " << i << ": " << score << "\n";
+
                 if (score > max_class_score) {
+                    
+                    //std::cout << "[OrtYoloDetector] New max class score for box " << i << ": " << score << ", class ID: " << c << "\n";
+
                     max_class_score = score;
                     max_class_id = c;
                 }
             }
+
+            //std::cout << "[OrtYoloDetector] Max class score for box " << i << ": " << max_class_score << ", class ID: " << max_class_id << "\n";
 
             // filter by confidence threshold
             if (max_class_score >= conf_threshold) {
@@ -157,6 +193,9 @@ namespace vision {
                 detect_results.push_back(det);
             }
         }
+
+        std::cout << "[OrtYoloDetector] Total detections after filtering: " << detect_results.size() << "\n";
+
         return detect_results;
     }
 

@@ -49,29 +49,68 @@ add_library(vision
 target_include_directories(vision PUBLIC include)
 target_link_libraries(vision
   PUBLIC
-    opencv_core opencv_imgproc opencv_imgcodecs opencv_video opencv_videoio
+    ${OpenCV_LIBS}
     nlohmann_json::nlohmann_json
     yaml-cpp::yaml-cpp
     spdlog::spdlog
 )
 
+# [NOTE] 为避免 MSVC Debug/Release CRT 混用导致早期 DLL 断言（如 libprotobufd.dll），
+# 对链接 onnxruntime 的链路统一使用 /MD（MultiThreadedDLL）。仅设置属性，不删除原配置，便于回滚。
+if(MSVC)
+  # Debug 用 /MDd，Release 用 /MD，避免与 vcpkg Debug 库不匹配
+  set_property(TARGET vision PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
+
 add_executable(a_demo apps/a_demo.cpp)
 target_link_libraries(a_demo PRIVATE vision)
+if(MSVC)
+  set_property(TARGET a_demo PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
 
 add_executable(test_perf apps/test_perf.cpp)
 target_link_libraries(test_perf PRIVATE vision)
+if(MSVC)
+  set_property(TARGET test_perf PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
 
 add_executable(annotate_tables apps/annotate_tables.cpp)
 target_link_libraries(annotate_tables PRIVATE vision opencv_highgui)
+if(MSVC)
+  set_property(TARGET annotate_tables PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
 
 add_executable(frame_extract apps/frame_extract.cpp)
 target_link_libraries(frame_extract PRIVATE vision)
+if(MSVC)
+  set_property(TARGET frame_extract PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
 
 add_executable(annotate_seat_states apps/annotate_seat_states.cpp)
 target_link_libraries(annotate_seat_states PRIVATE vision opencv_highgui)
+if(MSVC)
+  set_property(TARGET annotate_seat_states PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
 
 add_executable(annotate_person apps/annotate_person.cpp)
 target_link_libraries(annotate_person PRIVATE vision opencv_highgui)
+if(MSVC)
+  set_property(TARGET annotate_person PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
+# ================== Tests: test_imread (ADDED ONLY) ==================
+# 说明：不改动现有目标，新增一个用于诊断 imread/采样/VisionA 推理的可执行程序。
+add_executable(test_imread tests/test_imread.cpp)
+target_link_libraries(test_imread PRIVATE vision opencv_highgui)
+if(MSVC)
+  set_property(TARGET test_imread PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+endif()
+
+# (Removed per user request) Standalone build of test_imread was used for early CRT/onnxruntime isolation.
+# Keeping commented lines for easy restoration if needed.
+# add_executable(test_imread_standalone tests/test_imread.cpp)
+# target_compile_definitions(test_imread_standalone PRIVATE TEST_STANDALONE=1)
+# target_link_libraries(test_imread_standalone PRIVATE opencv_core opencv_imgproc opencv_imgcodecs opencv_highgui nlohmann_json::nlohmann_json yaml-cpp::yaml-cpp)
+
 
 
 # ---- ONNX Runtime 本地回退方案（不依赖 vcpkg 时启用） ----

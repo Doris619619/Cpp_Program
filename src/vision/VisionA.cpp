@@ -90,17 +90,27 @@ namespace vision {
 
         if (bgr.empty()) return out;
 
+        // ======== PROCESSING PIPELINE ========
+        std::cout << "[VisionA] Processing frame index: " << frame_index << " at " << ts_ms << " ms\n";
+
         // 1. 前景分割（原尺寸）
         cv::Mat fg_mask = impl_->mog2.apply(bgr);
+
+        std::cout << "[VisionA] Foreground mask computed.\n";
 
         // 2. 预处理：letterbox（保持比例，减少形变）
         auto sizeParseRes = Impl::sizeParse(bgr, 640);
         auto parsed_img = sizeParseRes.img;
 
+        std::cout << "[VisionA] Image resized for inference.\n";
+
         // 2. 推理: chg RawDet -> BBox
         std::vector<RawDet> raw_detected;
         try {
             raw_detected = impl_->detector->infer(parsed_img);
+
+            std::cout << "[VisionA] Inference successful. Raw detections obtained: " << raw_detected.size() << "\n";
+
         } catch (const std::exception& ex) {
             // 捕获 ONNX/推理异常，打印一次并继续返回空检测，避免整个程序退出
             static bool warned = false;
@@ -129,12 +139,16 @@ namespace vision {
             dets.push_back(b);
         }
 
+        std::cout << "[VisionA] Inference completed. Detected " << dets.size() << " objects.\n";
+
         // 3. 人与物简易分类
         std::vector<BBox> persons, objects;   // persons boxes and objects boxes
         for (auto& b : dets) {
             if (b.cls_name == "person") persons.push_back(b);
             else                        objects.push_back(b);
         }
+
+        std::cout << "[VisionA] Classified detections into " << persons.size() << " persons and " << objects.size() << " objects.\n";
         
         // 保存本帧所有检测结果供外部访问
         impl_->last_persons = persons;
@@ -152,6 +166,8 @@ namespace vision {
             return uni <= 0 ? 0.f : (inter / uni);  // IoU = inter / uni 交并比
         };
         
+        std::cout << "[VisionA] Calculating seat occupancy based on polygon and IoU.\n";
+
         // 多边形包含判定：检测框中心点是否在多边形内
         auto isBoxInPoly = [](const std::vector<cv::Point>& poly, const cv::Rect& box) {
             if (poly.size() < 3) return false;
