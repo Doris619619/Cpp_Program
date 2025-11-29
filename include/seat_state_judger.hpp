@@ -1,5 +1,6 @@
 #ifndef SEAT_STATE_JUDGER_HPP
 #define SEAT_STATE_JUDGER_HPP
+#include "SeatDatabase.h"  // YZC：这是数据库头文件，记得修改路径，不然会报错！！！
 #include "data_structures.hpp"
 #include <opencv2/opencv.hpp>
 #include <vector>
@@ -65,6 +66,9 @@ private:
     // 存储需要入库的frame_index（视频帧唯一ID）
     unordered_set<int> need_store_frame_indexes_;
 
+    // 新增：数据库引用
+    SeatDatabase& db_;
+    
     class SeatTimer {
     public:
         bool is_running = false;
