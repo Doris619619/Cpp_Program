@@ -34,6 +34,7 @@ runtime/Frames251124_01/
 # Third-party precompiled
 thirdparty/*/bin/
 thirdparty/*/lib/*. dll
+thirdparty/
 
 # Logs
 logs/
@@ -42,4 +43,10 @@ logs/
 # Python/conda
 __pycache__/
 *.pyc
-. ipynb_checkpoints/
+. ipynb_checkpoints/ 
+
+# Configuration settings
+CMakePresets.json
+CMakeSettings.json
+vcpkg-configuration.json
+vcpkg.json
