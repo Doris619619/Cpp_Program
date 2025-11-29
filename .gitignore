@@ -1,0 +1,45 @@
+# Build outputs
+build/
+build-release/
+out/
+. vs/
+.vscode/
+*. pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+
+# vcpkg installed packages
+vcpkg_installed/
+build/vcpkg_installed/
+
+# Training outputs
+runs/
+*. pt
+*. onnx
+yolov8n.pt
+
+# Data files
+data/videos/
+data/samples/
+data/frames_train/
+data/fine_tuning/
+runtime/Frames251123_01/
+runtime/Frames251123_02/
+runtime/Frames251123_03/
+runtime/Frames251124_01/
+
+# Third-party precompiled
+thirdparty/*/bin/
+thirdparty/*/lib/*. dll
+
+# Logs
+logs/
+*.log
+
+# Python/conda
+__pycache__/
+*.pyc
+. ipynb_checkpoints/
