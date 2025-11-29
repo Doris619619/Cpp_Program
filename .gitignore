@@ -31,6 +31,9 @@ runtime/Frames251123_02/
 runtime/Frames251123_03/
 runtime/Frames251124_01/
 
+# Records of seat states
+runtime/seat_states.jsonl
+
 # Third-party precompiled
 thirdparty/*/bin/
 thirdparty/*/lib/*. dll
