@@ -306,7 +306,10 @@ bool SeatStateJudger::readLastFrameData(
 void SeatStateJudger::run(const string& jsonl_path) {
     // 每次运行前重置帧索引存储，避免多次调用时重复
     resetNeedStoreFrameIndexes();
-
+    // 初始化数据库
+    SeatDatabase& db = SeatDatabase::getInstance();
+    db.initialize();
+    
     if (!jsonl_path.empty()) {
         vector<vector<A2B_Data>> batch_a2b_data;
         vector<vector<json>> batch_seat_j;
@@ -333,6 +336,19 @@ void SeatStateJudger::run(const string& jsonl_path) {
 
                     processAData(frame_a2b[seat_idx], frame_seat_j[seat_idx], state, alerts, snapshot, event);
 
+                    ///YZC：我添加了这三个调用函数（最好还要对一下头文件的路径，database.h 这个）
+                    //直接在这里调用数据库入库
+                    if (event.has_value()) {
+                        db.insertSeatEvent(event->seat_id, event->state, event->timestamp, event->duration_sec);
+                    }
+                    // 插入快照
+                    db.insertSnapshot(snapshot.timestamp, snapshot.seat_id， snapshot.state, snapshot.person_count);
+
+                    // 插入告警
+                    for (const auto& alert : alerts) {
+                        db.insertAlert(alert.alert_id, alert.seat_id, alert.alert_type, alert.alert_desc, alert.timestamp, alert.is_processed);
+                    }
+                    
                     // 判定条件（可与A同学协商调整）
                     if (event.has_value()  // 有座位状态变化（如空闲→有人、有人→异常）
                         || !alerts.empty() // 有异常占座告警
@@ -389,6 +405,34 @@ void SeatStateJudger::run(const string& jsonl_path) {
                     optional<B2C_SeatEvent> event;
                     processAData(a2b_data_list[i], seat_j_list[i], state, alerts, snapshot, event);
 
+                    /////YZC：实时监听模式也入库
+                    if (event.has_value()) {
+                        db_.insertSeatEvent(
+                            event->seat_id,
+                            event->state,
+                            event->timestamp,
+                            event->duration_sec
+                        );
+                    }
+
+                    db_.insertSnapshot(
+                        snapshot.timestamp,
+                        snapshot.seat_id,
+                        snapshot.state,
+                        snapshot.person_count
+                    );
+
+                    for (const auto& alert : alerts) {
+                        db_.insertAlert(
+                            alert.alert_id,
+                            alert.seat_id,
+                            alert.alert_type,
+                            alert.alert_desc,
+                            alert.timestamp,
+                            alert.is_processed
+                        );
+                    }
+                    
                     cout << "  座位 " << state.seat_id << ":" << endl;
                     cout << "    状态: " << stateToStr(state.status) << endl;
                     cout << "    持续时间: " << state.status_duration << "秒" << endl;
