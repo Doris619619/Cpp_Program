@@ -47,13 +47,13 @@ std::string Snapshotter::maybeSave(const std::string& seat_id,
 
     // 绘制框 (简单画线)
     cv::Mat draw = bgr.clone();
-    for (auto &r : boxes) {
-        cv::rectangle(draw, r, cv::Scalar(0,255,0), 2);
-    }
+    //for (auto &r : boxes) {
+        //cv::rectangle(draw, r, cv::Scalar(0,255,0), 2);
+    //}
     std::string filename = "seat_" + seat_id + "_" + std::to_string(ts_ms) + ".jpg";
     std::string full = dir_ + "/" + filename;
-    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, policy_.jpg_quality};
-    cv::imwrite(full, draw, params);
+    //std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, policy_.jpg_quality};
+    //cv::imwrite(full, draw, params);
 
     last_snap_ts_[seat_id] = ts_ms;
     last_state_hash_[seat_id] = state_hash;
