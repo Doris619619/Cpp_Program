@@ -2,9 +2,13 @@
 #include <filesystem>
 #include <iostream>
 #include <iomanip>
+#include <string>
+#include <algorithm>
+#include <set>
 #include "vision/VisionA.h"
 #include "vision/Publish.h"
 #include "vision/Config.h"
+#include "vision/Types.h"
 #include <opencv2/opencv.hpp>
 //#include <filesystem>
 #include <chrono>
@@ -14,50 +18,6 @@
 namespace fs = std::filesystem;
 
 namespace vision {
-
-    /* logic draft
-        iterate will extract frames from video derived from the path;
-        for the extraction mode, 
-            if stream_video is true, 
-            then read in frames and process them one-by-one without saving to disk, 
-                only save several img to the disk if needed (save_sample_frame = true)
-                (here the "several" implies that the number should not be larger than
-                10 and should be less than 1% of the total amount of fraames; sve after
-                all the frames processed, only save the frames s.t. conf >= 50/75/80%? 
-                use a queue (maybe) to implement filtering the highest conf annotated 
-                frames; saving directory is the same data/frames/frames_vNNN);
-            else, save all extracted frames to the guided data/frames and later the 
-                iterate will use onFrame to process all the saved frames.
-            
-            that is:
-            if stream_video:
-                for each frame in video:
-                    extract frame
-                    onFrame(frame)
-                    
-                    // saving logic
-                    if save_sample_frame and meet save condition:
-                        save frame to disk
-                        maintain map s.t. frame_idx(name) -> conf and order descendingly
-                        ending one will be discarded if new-in one better than it
-                    else:
-                        only save the last several frames to be processed (if nearly 
-                        all the frames mismatch the cond.)
-            else:
-                extract all frames to disk data/frames/frames_vNNN
-                for each frame in data/frames/frames_vNNN:
-                    onFrame(frame)
-                    
-                    // saving logic
-                    if save_sample_frame and meet save condition:
-                        save frame to disk
-                        maintain map s.t. frame_idx(name) -> conf and order descendingly
-                        ending one will be discarded if new-in one better than it
-                    else:
-                        only save the last several frames to be processed (if nearly 
-                        all the frames mismatch the cond.)
-
-    */
 
 // ==================== Core: Processing ===========================
 
@@ -133,12 +93,12 @@ bool vision::FrameProcessor::onFrame(
 size_t vision::FrameProcessor::streamProcess(
     const std::string& video_path,         // video file path
     const std::string& latest_frame_dir,   // output states parent path                        
-    double sample_fps,                     // sampling_freq
-    int start_frame,                       // first_frame index = 0
-    int end_frame,                         // end_frame index = -1 (the ending frame)
     VisionA& vision,                       // VisionA
     const VisionConfig& cfg,               // VisionConfig
     std::ofstream& ofs,                    // output file stream
+    double sample_fps,                     // sampling_freq
+    int start_frame,                       // first_frame index = 0
+    int end_frame,                         // end_frame index = -1 (the ending frame)
     size_t max_process_frames              // maximum frames to process
 ) {    
     // frame capturer initialization
@@ -182,8 +142,13 @@ size_t vision::FrameProcessor::streamProcess(
         sample_stepsize = std::max(sample_stepsize, static_cast<int>(original_total_frames / sample_cnt_ub));
     }
 
+    std::cout << "[FrameProcessor] Streaming video mode. Iterating frames...\n";
+
     // streaming video: Extract and Process Frame-by-Frame from Video
     for (int idx = start_frame, sample_cnt = 0; idx < original_total_frames, sample_cnt < sample_cnt_ub; idx += sample_stepsize, sample_cnt++) {
+        
+        // test iteration
+        std::cout << "[FrameProcessor] Processing frame index: " << idx << "\n";
         
         // skip-sampling
         cap.set(cv::CAP_PROP_POS_FRAMES, idx); // skip frames according to stepsize
@@ -213,7 +178,7 @@ size_t vision::FrameProcessor::streamProcess(
                 annotated_frames_dir,
                 ofs,
                 vision,
-                (fs::path(latest_frame_dir) / "latest_frame.jsonl").string(),
+                (fs::path(latest_frame_dir) / "last_frame.jsonl").string(),
                 processed_cnt
             );
             processed_cnt++;
@@ -245,40 +210,13 @@ size_t vision::FrameProcessor::streamProcess(
               << ", original fps=" << std::fixed << std::setprecision(2) << original_fps << "\n";
 
     return processed_cnt;
-
-    /*  old logic, just omit it   
-    //// y onFrame used
-    int idx = start_frame;
-    for (;;) {
-        cv::Mat bgr;
-        if (!cap.read(bgr)) {
-            std::cerr << "[FrameProcessor] Reached end of video or read error at frame index " << idx << "\n";
-            break; // EOF
-        }
-        double t_ms = cap.get(cv::CAP_PROP_POS_MSEC);
-        double t_sec = (t_ms > 1e-6) ? (t_ms / 1000.0) : (oringinal_fps > 0.0 ? (static_cast<double>(idx) / oringinal_fps) : 0.0);
-
-        bool take = !do_sample;
-        if (!take) {
-            if (t_sec + 1e-9 >= t_next_sample) {
-                take = true;
-                while (t_next_sample <= t_sec) t_next_sample += sample_stepsize;
-            }
-        }
-        if (take) {
-            if (!onFrame(idx, bgr, t_sec)) break;
-        }
-        if (end_frame >= 0 && idx >= end_frame) break;
-        ++idx;
-    }
-    */
 }
 
 // Bulk Extracting Video Frames 批量提取视频帧为图像文件
 size_t vision::FrameProcessor::bulkExtraction(
     const std::string& video_path,
-    const std::string& out_dir,                    // extract to data/frames/frames_vNNN/
     double sample_fps,                             // sampling fps = extract_fps, which is the program input arg
+    const std::string& out_dir,                    // extract to data/frames/frames_vNNN/
     int start_frame,
     int end_frame,
     int jpeg_quality,
@@ -307,6 +245,8 @@ size_t vision::FrameProcessor::bulkExtraction(
         sample_stempsize = getStepsize(static_cast<size_t>(total_frames), (sample_fps / original_fps <= 1 ? static_cast<int>(100 * sample_fps / original_fps) : 20));
         if (sample_stempsize < 1) sample_stempsize = 1;
     }
+
+    std::cout << "[FrameProcessor] Bulk extracting and processing video mode. Extracting frames...\n";
 
     // extract frames
     size_t extracted_cnt = 0;
@@ -351,14 +291,14 @@ size_t vision::FrameProcessor::bulkExtraction(
 /*  @brief Bulk Processing Video  批量处理视频帧
 *
 *   @param video_path:        视频文件路径
-*   @param img_dir:           图像输出目录
 *   @param lastest_frame_dir: 最新帧文件目录 
-*   @param sample_fps:       采样帧率
-*   @param start_frame:      起始帧索引
-*   @param end_frame:        结束帧索引
 *   @param cfg:              VisionConfig配置
 *   @param ofs:              输出文件流
 *   @param vision:           VisionA实例
+*   @param sample_fps:       采样帧率
+*   @param start_frame:      起始帧索引
+*   @param end_frame:        结束帧索引
+*   @param img_dir:           图像输出目录
 *   @param max_process_frames: 最大处理帧数
 *   @param jpeg_quality:      JPEG图像质量
 *   @param filename_prefix:   输出文件名前缀
@@ -367,20 +307,22 @@ size_t vision::FrameProcessor::bulkExtraction(
 */
 size_t vision::FrameProcessor::bulkProcess(
     const std::string& video_path,                   // 
-    const std::string& img_dir,                      // 
-    const std::string& lastest_frame_dir,            // 
-    double sample_fps,                               // 
-    int start_frame,                                 //           
-    int end_frame,                                   // 
+    const std::string& latest_frame_dir,             // 
     const VisionConfig& cfg,                         // VisionConfig used by onFrame
     std::ofstream& ofs,                              // output file stream
     VisionA& vision,                                 // VisionA
+    double sample_fps,                               // 
+    int start_frame,                                 //           
+    int end_frame,                                   // 
+    const std::string& img_dir,                      //
     size_t max_process_frames,                       // use user input --max
     int jpeg_quality,                                // 
     const std::string& filename_prefix               // 
 ) {
+    std::cout << "[FrameProcessor] Bulk extracting and processing video mode. Extraction to be begin...\n";
+    
     // bulk extract frames (with sample)
-    size_t extracted = bulkExtraction(video_path, img_dir, sample_fps, start_frame, end_frame, jpeg_quality, filename_prefix);
+    size_t extracted = bulkExtraction(video_path, sample_fps, img_dir, start_frame, end_frame, jpeg_quality, filename_prefix);
     if (extracted == 0) return 0;
 
     // set stepsize 
@@ -399,12 +341,14 @@ size_t vision::FrameProcessor::bulkProcess(
        
     */
 
+    std::cout << "[FrameProcessor] Bulk extracting and processing video mode. Processing to be begin...\n";
+
     // process extracted frames
     size_t processed_cnt = 0;
     int consecutive_failures_cnt = 0;
     for (size_t idx = 0; idx < extracted; idx+=process_stepsize) {
         
-        // check if exists before processing
+        // check if img dir exists before processing
         if (!std::filesystem::exists(std::filesystem::path(img_dir) / (filename_prefix + std::to_string(idx) + ".jpg"))) {  // img: prefix + 000000 + .jpg (idx at 000000)
             std::cerr << "[FrameProcessor] bulkProcess imread failed: " << (std::filesystem::path(img_dir) / (filename_prefix + std::to_string(idx) + ".jpg")).string() << "\n";
             ++consecutive_failures_cnt;
@@ -423,10 +367,10 @@ size_t vision::FrameProcessor::bulkProcess(
             // process frame via imageProcess
             FrameProcessor::imageProcess(
                 img_dir, 
+                latest_frame_dir,
                 ofs, 
                 cfg,
                 vision,
-                lastest_frame_dir,
                 max_process_frames - processed_cnt,
                 20,                                   // sample_fp100
                 original_total_frames
@@ -457,11 +401,13 @@ size_t vision::FrameProcessor::bulkProcess(
 * 批量图像处理: 遍历目录下的所有图像文件并通过回调处理
 * 
 *  @param image_dir:            图像所在目录
+*  @param latest_frame_dir:     最新帧文件路径
 *  @param ofs:                  输出文件流
 *  @param cfg:                  VisionConfig配置
 *  @param vision:               VisionA实例
-*  @param latest_frame_file:    最新帧文件路径
 *  @param max_process_frames:   最大处理帧数
+*  @param sample_fp100:         每100张图像采样的帧数
+*  @param original_total_frames:原始总帧数索引偏移（如果提供0，则重新检查目录中所有图像的数量）
 *  
 *  @return  number of frames processed 处理的帧数
 */
@@ -482,7 +428,7 @@ size_t vision::FrameProcessor::imageProcess(
     size_t total_frames = (original_total_frames > 0) ? original_total_frames : countImageFilesInDir(image_path);
     const std::string annotated_frames_dir = !cfg.annotated_frames_dir.empty() ? cfg.annotated_frames_dir : "data/annotated_frames"; // directory to save annotated frames
     
-    int sample_fp100 = 20;                                         // default sampling fps100 if needed later
+    //sample_fp100 = 20;                                         // default sampling fps100 if needed later
     int sample_stepsize = getStepsize(total_frames, sample_fp100); // stepsize for sampling during processing
     int original_img_idx = 0;                                      // original image index during iteration
     
@@ -517,15 +463,33 @@ size_t vision::FrameProcessor::imageProcess(
 
         // sampling logic
         if (original_img_idx % sample_stepsize != 0) {
-            ++original_img_idx;
-            continue;
+            //++original_img_idx;
+            //continue;
         }
         ++original_img_idx; 
 
         // basic checks
         if (!entry.is_regular_file()) continue;
+        try {
+            std::cout << "[FrameProcessor] Processing image: " << entry.path().string() << "\n";
+            cv::Mat bgr = cv::imread(entry.path().string());
+        } catch (...) {
+            ++total_errors;
+            cv::Mat bgr;
+            std::cerr << "[FrameProcessor] imageProcess imread exception: " << entry.path().string() << "\n";
+            continue;
+        }
         cv::Mat bgr = cv::imread(entry.path().string());
-        if (bgr.empty()) continue;
+        // ================== DIAG (ADDED ONLY) ==================
+        // 若 imread 返回 empty:
+        // 1) 可能是路径或权限问题
+        // 2) 可能是运行时加载到错误的 OpenCV DLL (PATH 被 conda 覆盖), 导致编解码模块不可用
+        // 建议在此添加一次性日志, 便于确认是否全部失败导致 total_processed=0:
+         if (bgr.empty()) {
+             std::cerr << "[FrameProcessor][diag] imread empty: " << entry.path().string() << "\n";
+         }
+        //if (bgr.empty()) continue; // 原逻辑: 直接跳过, 不计入错误统计, 可能掩盖问题
+        // =======================================================
         
         // process frame with exception handling
         try {
@@ -539,13 +503,28 @@ size_t vision::FrameProcessor::imageProcess(
                 bgr,
                 0.0,  // t_sec
                 now_ms,
-                std::filesystem::path(image_path),
+                entry.path(),    //::filesystem::path(image_path), // 建议改为 entry.path() (见下方注释)
                 annotated_frames_dir,
                 ofs,
                 vision,
-                (std::filesystem::path(latest_frame_dir) / "latest_frame.jsonl").string(),
+                (std::filesystem::path(latest_frame_dir) / "last_frame.jsonl").string(),
                 total_processed
             );
+            // 说明: 这里传入的 input_path 用于 onFrame 内部 stem() 生成文件名前缀.
+            // 目前使用整个目录 path 的 stem, 会导致所有标注文件共享同一前缀, 难以对应原始图片。
+            // 建议替换为 entry.path() 以便 annotated_path 区分源文件.
+            // 示例替换(仅注释, 不改动原代码):
+            // bool continue_process = FrameProcessor::onFrame(
+            //     frame_index,
+            //     bgr,
+            //     0.0,
+            //     now_ms,
+            //     entry.path(),              // 每张图自己的文件名
+            //     annotated_frames_dir,
+            //     ofs,
+            //     vision,
+            //     (std::filesystem::path(latest_frame_dir) / "last_frame.jsonl").string(),
+            //     total_processed);
             
             ++frame_index;
             ++total_processed;
@@ -562,7 +541,7 @@ size_t vision::FrameProcessor::imageProcess(
             std::cerr << "[FrameProcessor] Frame error: " << exception.what() << " src=" << image_path << "\n";
         } catch (...) {    // unknown exception
             ++total_errors;
-            std::cerr << "[FrameProcessor] Frame error: unknown src=" << image_path.string() << "\n";
+            std::cerr << "[FrameProcessor] Frame error: unknown src=" << image_path << "\n";
         }
     }
 
@@ -665,6 +644,44 @@ std::string FrameProcessor::getExtractionOutDir(const std::string& out_dir){
 
     return extract_dir.string();
 }
+
+
+// judge if is video by extension
+bool vision::FrameProcessor::isVideoFile(const std::string& file_path_string) {
+    auto file_path = std::filesystem::path(file_path_string);
+    auto ext = file_path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    static const std::set<std::string> exts = {
+        ".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm", ".mpg", ".mpeg", ".m4v", ".ts", ".mts"
+    };
+    return exts.count(ext) > 0;
+}
+
+// judge if is image by extension
+bool vision::FrameProcessor::isImageFile(const std::string& file_path_string) {
+    auto file_path = std::filesystem::path(file_path_string);
+    auto ext = file_path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    static const std::set<std::string> exts = {
+        ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"
+    };
+    return exts.count(ext) > 0;
+}
+
+// judge input type (directory, video file, image file, unknown)
+InputType vision::FrameProcessor::judgeInputType(const std::string& file_path_string) {
+    auto file_path = std::filesystem::path(file_path_string);
+    std::error_code error_code;
+    if (!std::filesystem::exists(file_path, error_code))            return InputType::NOT_EXISTS;
+    if (std::filesystem::is_regular_file(file_path, error_code)) {
+        if (isVideoFile(file_path_string))                          return InputType::VIDEO_FILE;
+        if (isImageFile(file_path_string))                          return InputType::IMAGE_FILE;
+        else                                                        return InputType::UNKNOWN;
+    }
+    if (std::filesystem::is_directory(file_path, error_code))       return InputType::DIRECTORY_IMAGE;
+    else                                                            return InputType::UNKNOWN;
+}
+
 
 } // namespace vision
  
@@ -821,3 +838,48 @@ bool fetchFramesBySampleIndices(const std::string& video_path,
 } // end extra namespace vision block
 
 */
+
+
+/* logic draft
+        iterate will extract frames from video derived from the path;
+        for the extraction mode, 
+            if stream_video is true, 
+            then read in frames and process them one-by-one without saving to disk, 
+                only save several img to the disk if needed (save_sample_frame = true)
+                (here the "several" implies that the number should not be larger than
+                10 and should be less than 1% of the total amount of fraames; sve after
+                all the frames processed, only save the frames s.t. conf >= 50/75/80%? 
+                use a queue (maybe) to implement filtering the highest conf annotated 
+                frames; saving directory is the same data/frames/frames_vNNN);
+            else, save all extracted frames to the guided data/frames and later the 
+                iterate will use onFrame to process all the saved frames.
+            
+            that is:
+            if stream_video:
+                for each frame in video:
+                    extract frame
+                    onFrame(frame)
+                    
+                    // saving logic
+                    if save_sample_frame and meet save condition:
+                        save frame to disk
+                        maintain map s.t. frame_idx(name) -> conf and order descendingly
+                        ending one will be discarded if new-in one better than it
+                    else:
+                        only save the last several frames to be processed (if nearly 
+                        all the frames mismatch the cond.)
+            else:
+                extract all frames to disk data/frames/frames_vNNN
+                for each frame in data/frames/frames_vNNN:
+                    onFrame(frame)
+                    
+                    // saving logic
+                    if save_sample_frame and meet save condition:
+                        save frame to disk
+                        maintain map s.t. frame_idx(name) -> conf and order descendingly
+                        ending one will be discarded if new-in one better than it
+                    else:
+                        only save the last several frames to be processed (if nearly 
+                        all the frames mismatch the cond.)
+
+    */

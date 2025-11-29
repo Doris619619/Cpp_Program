@@ -4,10 +4,13 @@
 #include <vector>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
+#include <set>
 #include <opencv2/opencv.hpp>
 #include "vision/VisionA.h"
 #include "vision/Publish.h"
 #include "vision/Config.h"
+#include "vision/Types.h"
 
 namespace vision {
 
@@ -42,7 +45,7 @@ public:
     @note - record annotated frame and output in the jsonl file
     @note - DO NOT responsible for judging whether to save-in-disk, return bool for handled or not
     */
-    static bool FrameProcessor::onFrame(
+    static bool onFrame(
         int, // frame_index
         const cv::Mat&, // bgr 
         double /*t_sec*/, 
@@ -55,7 +58,7 @@ public:
         size_t& // processed
     );
 
-    /*  @brief streamProcess 流式处理视频帧
+    /*  @brief streamProcess 流式处理视频帧   
     *  
     *  参考 sample_fps 边抽帧边处理，不入库
     * 
@@ -70,15 +73,15 @@ public:
     * 
     *  @return bool: 处理是否成功
     */
-    static size_t FrameProcessor::streamProcess(
+    static size_t streamProcess(
         const std::string& videoPath,
         const std::string& latest_frame_dir,
-        double sampleFps = 0.0,
-        int startFrame = 0,
-        int endFrame = -1,
         VisionA& vision,
         const VisionConfig& cfg,
         std::ofstream& ofs,
+        double sampleFps = 0.0,
+        int startFrame = 0,
+        int endFrame = -1,
         size_t max_process_frames = 500
     );
 
@@ -94,10 +97,10 @@ public:
     * 
     *  @return number of frames extracted 提取的帧数
     */ 
-    static size_t FrameProcessor::bulkExtraction(
+    static size_t bulkExtraction(
         const std::string& video_path,
-        const std::string& out_dir = "./data/frames/",
         double sample_fps, 
+        const std::string& out_dir = "./data/frames/",
         int start_frame = 0,
         int end_frame = -1,
         int jpeg_quality = 95,
@@ -121,16 +124,16 @@ public:
     *
     *   @return number of frames processed 处理的帧数
     */
-    static size_t FrameProcessor::bulkProcess(
+    static size_t bulkProcess(
         const std::string& video_path,
-        const std::string& img_dir = "./data/frames/",
         const std::string& latest_frame_dir,
-        double sample_fps,                            // frames args
-        int start_frame = 0,
-        int end_frame = -1,
         const VisionConfig& cfg,                      // used by onFrame
         std::ofstream& ofs,
         VisionA& vision,
+        double sample_fps,                            // frames args
+        int start_frame = 0,
+        int end_frame = -1,
+        const std::string& img_dir = "./data/frames/",
         size_t max_process_frames = 500,              // use user input --max
         int jpeg_quality = 95,
         const std::string& filename_prefix = "f_"
@@ -150,7 +153,7 @@ public:
     *  
     *  @return  number of frames processed 处理的帧数
     */
-    static size_t FrameProcessor::imageProcess(
+    static size_t imageProcess(
         const std::string& image_path,
         const std::string& latest_frame_dir,
         std::ofstream& ofs,
@@ -161,7 +164,7 @@ public:
         int original_total_frames = 0
     );
 
-    // ==================== Utils: Sampling, Counting, and Mapping ===========================
+    // ==================== Utils: Sampling, Counting, Checking and Mapping ===========================
 
     // count files in specific directory
     static size_t countFilesInDir(const std::string& dir_path);
@@ -176,7 +179,17 @@ public:
     static int getStepsize(size_t image_count, int sample_fp100);
 
     // get extraction output directory (create if not exists) (for bulk extraction mainly)
-    static std::string FrameProcessor::getExtractionOutDir(const std::string& out_dir);
+    static std::string getExtractionOutDir(const std::string& out_dir);
+
+    // judge if is video by extension
+    static bool isVideoFile(const std::string& file_path);
+
+    // judge if is image by extension
+    static bool isImageFile(const std::string& file_path);
+
+    // judge input type (directory, video file, image file, unknown)
+    static InputType judgeInputType(const std::string& file_path_string);
+
 
     /* temp refs: map from seat index to seat id  
 
@@ -215,7 +228,6 @@ bool fetchFramesBySampleIndices(const std::string& video_path,
     */
 
 //private:
-
 
 };
 

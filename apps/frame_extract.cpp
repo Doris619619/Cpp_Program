@@ -1,4 +1,4 @@
-#include "vision/FrameExtractor.h"
+#include "vision/FrameProcessor.h"
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
               << "  qual  : " << quality << "\n"
               << "  range : [" << sframe << ", " << (eframe < 0 ? -1 : eframe) << "]\n";
 
-    size_t n = vision::FrameProcessor::extractToDir(videoPath, outDir, fps, quality, sframe, eframe, prefix);
-    std::cout << "Saved " << n << " frames to " << outDir << "\n";
+    //size_t n = vision::FrameProcessor::extractToDir(videoPath, outDir, fps, quality, sframe, eframe, prefix);
+    //std::cout << "Saved " << n << " frames to " << outDir << "\n";
     return 0;
 }

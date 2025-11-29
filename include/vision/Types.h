@@ -15,6 +15,15 @@ struct BBox {
     std::string cls_name;       // 类别名称 ("person", "object", "backpack"...)
 };
 
+// 处理方法判据参考输入类型
+enum class InputType {
+    DIRECTORY_IMAGE,
+    VIDEO_FILE,
+    IMAGE_FILE,
+    NOT_EXISTS,
+    UNKNOWN
+};
+
 // 座位帧状态
 struct SeatFrameState {
     int seat_id = -1;              // 与seat.json中的seat_id一致
