@@ -276,7 +276,7 @@ namespace vision {
                 } else {
                     snap_boxes.push_back(sfs.seat_roi); // 无检测时使用座位 ROI
                 }
-                std::string snap_path = impl_->snapshotter->maybeSave(
+                std::string snap_path = impl_->snapshotter->saveSnapshot(
                     std::to_string(sfs.seat_id),
                     state_hash,
                     ts_ms,

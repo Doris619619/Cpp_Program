@@ -41,11 +41,11 @@ static std::filesystem::path g_out_images;
 static std::filesystem::path g_out_labels;
 static cv::Mat g_current;
 
-static void ensure_dir(const std::filesystem::path &p) {
+static void ensureDir(const std::filesystem::path &p) {
     std::error_code ec; std::filesystem::create_directories(p, ec);
 }
 
-static void save_current() {
+static void saveCurrent() {
     if(g_index < 0 || g_index >= (int)g_images.size()) return;
     auto src_path = g_images[g_index];
     auto stem = src_path.stem().string();
@@ -66,7 +66,7 @@ static void save_current() {
     std::cout << "Saved " << dst_img << " and " << dst_lbl << " (" << g_boxes.size() << " boxes)\n";
 }
 
-static void draw_ui() {
+static void draw() {
     cv::Mat vis = g_current.clone();
     for(size_t i=0;i<g_boxes.size();++i){
         const auto &b = g_boxes[i];
@@ -78,7 +78,7 @@ static void draw_ui() {
     cv::imshow(g_window, vis);
 }
 
-static int hit_test(int x, int y) {
+static int test(int x, int y) {
     for(size_t i=0;i<g_boxes.size();++i){
         int x1 = std::min(g_boxes[i].x1,g_boxes[i].x2);
         int x2 = std::max(g_boxes[i].x1,g_boxes[i].x2);
@@ -89,10 +89,10 @@ static int hit_test(int x, int y) {
     return -1;
 }
 
-static void mouse_cb(int event, int x, int y, int flags, void*) {
+static void mouseCallback(int event, int x, int y, int flags, void*) {
     if(g_current.empty()) return;
     if(event == cv::EVENT_LBUTTONDOWN){
-        int h = hit_test(x,y);
+        int h = test(x,y);
         if(h>=0){
             g_selected = h;
             g_dragging_move = true;
@@ -113,18 +113,18 @@ static void mouse_cb(int event, int x, int y, int flags, void*) {
     } else if(event == cv::EVENT_LBUTTONUP){
         g_dragging_new = false; g_dragging_move = false;
     } else if(event == cv::EVENT_RBUTTONDOWN){
-        int h = hit_test(x,y); if(h>=0) g_selected = h; else g_selected = -1;
+        int h = test(x,y); if(h>=0) g_selected = h; else g_selected = -1;
     }
-    draw_ui();
+    draw();
 }
 
-static void load_frame(int idx){
+static void loadFrame(int idx){
     if(idx<0 || idx>=(int)g_images.size()) return;
     g_index = idx;
     g_current = cv::imread(g_images[g_index].string());
     if(g_current.empty()){
         std::cerr << "Failed to load: " << g_images[g_index] << "\n"; return; }
-    draw_ui();
+    draw();
 }
 
 int main(int argc, char** argv){
@@ -149,24 +149,24 @@ int main(int argc, char** argv){
     if(g_images.empty()){ std::cerr << "No images found in " << frames_dir << '\n'; return 1; }
     g_out_images = out_root / "images_manual";
     g_out_labels = out_root / "labels_manual";
-    ensure_dir(g_out_images); ensure_dir(g_out_labels);
+    ensureDir(g_out_images); ensureDir(g_out_labels);
 
     cv::namedWindow(g_window, cv::WINDOW_NORMAL);
-    cv::setMouseCallback(g_window, mouse_cb);
-    load_frame(0);
+    cv::setMouseCallback(g_window, mouseCallback);
+    loadFrame(0);
 
     while(true){
         int k = cv::waitKey(30);
-        if(k == 'n'){ save_current(); load_frame(std::min(g_index+1,(int)g_images.size()-1)); }
-        else if(k == 'p'){ save_current(); load_frame(std::max(g_index-1,0)); }
-        else if(k == 's'){ save_current(); }
-        else if(k == 'd'){ if(!g_boxes.empty()){ g_boxes.pop_back(); draw_ui(); } }
-        else if(k == 'c'){ g_boxes.clear(); g_selected=-1; draw_ui(); }
-        else if(k == 27 || k=='q'){ save_current(); break; }
-        else if(k == 0x250000){ /* left arrow */ if(g_selected>=0){ g_boxes[g_selected].x1-=1; g_boxes[g_selected].x2-=1; draw_ui(); } }
-        else if(k == 0x270000){ /* right arrow */ if(g_selected>=0){ g_boxes[g_selected].x1+=1; g_boxes[g_selected].x2+=1; draw_ui(); } }
-        else if(k == 0x260000){ /* up arrow */ if(g_selected>=0){ g_boxes[g_selected].y1-=1; g_boxes[g_selected].y2-=1; draw_ui(); } }
-        else if(k == 0x280000){ /* down arrow */ if(g_selected>=0){ g_boxes[g_selected].y1+=1; g_boxes[g_selected].y2+=1; draw_ui(); } }
+        if(k == 'n'){ saveCurrent(); loadFrame(std::min(g_index+1,(int)g_images.size()-1)); }
+        else if(k == 'p'){ saveCurrent(); loadFrame(std::max(g_index-1,0)); }
+        else if(k == 's'){ saveCurrent(); }
+        else if(k == 'd'){ if(!g_boxes.empty()){ g_boxes.pop_back(); draw(); } }
+        else if(k == 'c'){ g_boxes.clear(); g_selected=-1; draw(); }
+        else if(k == 27 || k=='q'){ saveCurrent(); break; }
+        else if(k == 0x250000){ /* left arrow */ if(g_selected>=0){ g_boxes[g_selected].x1-=1; g_boxes[g_selected].x2-=1; draw(); } }
+        else if(k == 0x270000){ /* right arrow */ if(g_selected>=0){ g_boxes[g_selected].x1+=1; g_boxes[g_selected].x2+=1; draw(); } }
+        else if(k == 0x260000){ /* up arrow */ if(g_selected>=0){ g_boxes[g_selected].y1-=1; g_boxes[g_selected].y2-=1; draw(); } }
+        else if(k == 0x280000){ /* down arrow */ if(g_selected>=0){ g_boxes[g_selected].y1+=1; g_boxes[g_selected].y2+=1; draw(); } }
     }
     std::cout << "Done.\n";
     return 0;

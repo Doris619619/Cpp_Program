@@ -16,18 +16,11 @@ namespace vision {
     class OrtYoloDetector {
     public:
         struct SessionOptions {
-            std::string model_path = "data/models/yolov8n_640.onnx";
+            std::string model_path = "data/models/person01.onnx";
             int input_w = 640;
             int input_h = 640;
             bool fake_infer = true;
         };
-
-    /*struct Env {
-        这里env需要有哪些内容？env与模型是什么关系？需要实现哪些操作？
-    };*/
-    //Ort::Env env;//(ORT_LOGGING_LEVEL_WARNING, "YOLOv8n");  // log level: warning, env name: YOLOv8n
-    //Ort::SessionOptions session_options;
-    //session_options.SetIntraOpNumThreads(0);   // auto decide threads usage
 
         explicit OrtYoloDetector(const SessionOptions& opt);
         ~OrtYoloDetector() = default;

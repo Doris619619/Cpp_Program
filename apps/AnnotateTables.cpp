@@ -5,7 +5,7 @@
 
 using namespace vision;
 
-static void draw_poly(cv::Mat& img, const std::vector<cv::Point>& poly, const cv::Scalar& color) {
+static void drawPoly(cv::Mat& img, const std::vector<cv::Point>& poly, const cv::Scalar& color) {
     if (poly.size() < 2) return;
     for (size_t i = 0; i < poly.size(); ++i) {
         cv::line(img, poly[i], poly[(i+1)%poly.size()], color, 2);
@@ -62,8 +62,8 @@ int main(int argc, char** argv) {
         cv::Mat vis = img.clone();
         
         // NOTICE: table is blank at the beginning
-        for (auto& t : tables) draw_poly(vis, t, {0,255,0});
-        draw_poly(vis, current, {0,128,255});
+        for (auto& t : tables) drawPoly(vis, t, {0,255,0});
+        drawPoly(vis, current, {0,128,255});
         cv::imshow("annotate", vis);
         int k = cv::waitKey(30);
         if (k == 13 || k == 10) { // Enter

@@ -68,41 +68,40 @@ if(MSVC)
   set_property(TARGET a_demo PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
 
-add_executable(test_perf apps/test_perf.cpp)
-target_link_libraries(test_perf PRIVATE vision)
+add_executable(TestPerf tests/TestPerf.cpp)
+target_link_libraries(TestPerf PRIVATE vision)
 if(MSVC)
-  set_property(TARGET test_perf PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+  set_property(TARGET TestPerf PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
 
-add_executable(annotate_tables apps/annotate_tables.cpp)
-target_link_libraries(annotate_tables PRIVATE vision opencv_highgui)
+add_executable(AnnotateTables apps/AnnotateTables.cpp)
+target_link_libraries(AnnotateTables PRIVATE vision opencv_highgui)
 if(MSVC)
-  set_property(TARGET annotate_tables PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+  set_property(TARGET AnnotateTables PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
 
-add_executable(frame_extract apps/frame_extract.cpp)
-target_link_libraries(frame_extract PRIVATE vision)
+add_executable(FrameExtract apps/FrameExtract.cpp)
+target_link_libraries(FrameExtract PRIVATE vision)
 if(MSVC)
-  set_property(TARGET frame_extract PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+  set_property(TARGET FrameExtract PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
 
-add_executable(annotate_seat_states apps/annotate_seat_states.cpp)
-target_link_libraries(annotate_seat_states PRIVATE vision opencv_highgui)
+add_executable(AnnotateSeatStates apps/AnnotateSeatStates.cpp)
+target_link_libraries(AnnotateSeatStates PRIVATE vision opencv_highgui)
 if(MSVC)
-  set_property(TARGET annotate_seat_states PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+  set_property(TARGET AnnotateSeatStates PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
 
-add_executable(annotate_person apps/annotate_person.cpp)
-target_link_libraries(annotate_person PRIVATE vision opencv_highgui)
+add_executable(AnnotatePerson apps/AnnotatePerson.cpp)
+target_link_libraries(AnnotatePerson PRIVATE vision opencv_highgui)
 if(MSVC)
-  set_property(TARGET annotate_person PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+  set_property(TARGET AnnotatePerson PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
-# ================== Tests: test_imread (ADDED ONLY) ==================
-# 说明：不改动现有目标，新增一个用于诊断 imread/采样/VisionA 推理的可执行程序。
-add_executable(test_imread tests/test_imread.cpp)
-target_link_libraries(test_imread PRIVATE vision opencv_highgui)
+
+add_executable(TestImread tests/TestImread.cpp)
+target_link_libraries(TestImread PRIVATE vision opencv_highgui)
 if(MSVC)
-  set_property(TARGET test_imread PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
+  set_property(TARGET TestImread PROPERTY MSVC_RUNTIME_LIBRARY "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>")
 endif()
 
 # (Removed per user request) Standalone build of test_imread was used for early CRT/onnxruntime isolation.
@@ -111,9 +110,6 @@ endif()
 # target_compile_definitions(test_imread_standalone PRIVATE TEST_STANDALONE=1)
 # target_link_libraries(test_imread_standalone PRIVATE opencv_core opencv_imgproc opencv_imgcodecs opencv_highgui nlohmann_json::nlohmann_json yaml-cpp::yaml-cpp)
 
-
-
-# ---- ONNX Runtime 本地回退方案（不依赖 vcpkg 时启用） ----
 # 若上面的 find_package 没有找到 onnxruntime 目标，则尝试从 thirdparty/onnxruntime 以导入库方式链接
 if(NOT TARGET onnxruntime)
   set(ONNXRUNTIME_ROOT "${CMAKE_SOURCE_DIR}/thirdparty/onnxruntime" CACHE PATH "ONNX Runtime root directory")
@@ -146,7 +142,6 @@ if(NOT TARGET onnxruntime)
     endif()
     message(STATUS "Using local ONNX Runtime from ${ONNXRUNTIME_ROOT}")
 
-    # 运行期复制 DLL（Windows）
     if(WIN32 AND EXISTS "${ONNXRUNTIME_DLL}")
       foreach(_exe a_demo test_perf)
         if(TARGET ${_exe})
@@ -163,6 +158,3 @@ endif()
 if(TARGET onnxruntime)
   target_link_libraries(vision PUBLIC onnxruntime)
 endif()
-
-# 提示：实际目标（库/可执行）请在 src/ 与 apps/ 完成后补充。
-# 先保持可配置通过，避免引用不存在的源文件导致错误。

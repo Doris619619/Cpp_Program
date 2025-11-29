@@ -50,5 +50,3 @@ float Mog2Manager::ratioInPoly(const cv::Mat& fg, const std::vector<cv::Point>& 
 }
 
 } // namespace vision
-
-//}// namespace vision

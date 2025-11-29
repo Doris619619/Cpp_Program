@@ -28,7 +28,7 @@ bool loadSeatsFromJson(const std::string& path, std::vector<SeatROI>& out) {
         for (auto& s : root["seats"]) {
             try {
                 SeatROI seat;
-                // seat_id 允许是整数或字符串（如 "A1"），字符串时提取其中的数字部分
+                // seat_id 允许是整数或字符串(如 "A1"), 字符串时提取其中的数字部分
                 if (s.contains("seat_id")) {
                     if (s["seat_id"].is_number_integer()) {
                         seat.seat_id = s["seat_id"].get<int>();

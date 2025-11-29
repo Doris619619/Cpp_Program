@@ -15,7 +15,7 @@ struct SnapshotPolicy {
 class Snapshotter {
 public:
     Snapshotter(const std::string& dir, const SnapshotPolicy& policy);
-    std::string maybeSave(const std::string& seat_id,
+    std::string saveSnapshot(const std::string& seat_id,
                           int state_hash,
                           int64_t ts_ms,
                           const cv::Mat& bgr,

@@ -7,7 +7,7 @@ namespace vision {
 /*     Snapshotter 快照器: 策略判定与保存 
 *
 * Snapshotter class implementation
-*  - maybeSave: 根据策略决定是否保存快照，并执行保存
+*  - saveSnapshot: 根据策略决定是否保存快照，并执行保存
 * 
 * SnapshotPolicy struct defines the saving policy
 */
@@ -18,7 +18,7 @@ Snapshotter::Snapshotter(const std::string& dir, const SnapshotPolicy& policy)
     std::filesystem::create_directories(dir_);
 }
 
-std::string Snapshotter::maybeSave(const std::string& seat_id,
+std::string Snapshotter::saveSnapshot(const std::string& seat_id,
                                    int state_hash,                      // State hash(?seat to state?)
                                    int64_t ts_ms,                       // Timestamp (ms)
                                    const cv::Mat& bgr,                  // BGR image

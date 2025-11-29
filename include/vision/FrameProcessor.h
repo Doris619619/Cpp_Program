@@ -190,43 +190,6 @@ public:
     // judge input type (directory, video file, image file, unknown)
     static InputType judgeInputType(const std::string& file_path_string);
 
-
-    /* temp refs: map from seat index to seat id  
-
-// 计算单个采样序号对应的原视频帧号
-// sample_index: 第几个被保留的采样(从0开始)
-// original_fps: 原视频实际 fps (若被 safe_fps() 截断为2, 回取逻辑应仍使用真实 fps, 可由调用侧传入)
-// sample_fps:   采样频率 (<=0 表示未采样, 直接返回 sample_index)
-static int mapSampleIndexToOriginalFrame(int sample_index, double original_fps, double sample_fps)
-
-// 直接按原始帧号列表回取 (适用于已经返回的是原视频帧号而非采样序号)
-bool fetchFramesByOriginalIndices(const std::string& video_path,
-                                  const std::vector<int>& original_indices,
-                                  std::vector<cv::Mat>& out_frames)
-
-// 批量映射采样序号到原视频帧号
-static std::vector<int> mapSampleIndicesToOriginalFrames(const std::vector<int>& sample_indices,
-                                                         double original_fps,
-                                                         double sample_fps)
-
-// 根据“采样阶段的采样序号”列表回取对应原视频帧; 若采样频率为0(表示未采样, 全帧), 则采样序号即原始帧号
-// video_path:   原视频
-// sample_fps:   当初采样使用的频率
-// original_fps: 原视频真实 fps (不使用 safe_fps 截断的值); 若 <=0 则从视频重新获取
-// sample_indices: 需要回取的采样序号列表(非原始帧号)
-// out_frames:   输出的图像帧 (按 sample_indices 顺序)
-// out_original_indices: 输出对应的原始帧号 (与 out_frames 一一对应)
-bool fetchFramesBySampleIndices(const std::string& video_path,
-                                double sample_fps,
-                                double original_fps,
-                                const std::vector<int>& sample_indices,
-                                std::vector<cv::Mat>& out_frames,
-                                std::vector<int>& out_original_indices)
-
-
-
-    */
-
 //private:
 
 };

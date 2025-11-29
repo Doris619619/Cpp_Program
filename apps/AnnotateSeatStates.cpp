@@ -143,7 +143,7 @@ int main(int argc, char** argv) {
         cv::imshow("annotator", vis);
     };
 
-    bool needRedraw = true;
+    bool need_red_raw = true;
     cv::setMouseCallback("annotator", [](int event, int x, int y, int, void* userdata){
         if (event != cv::EVENT_LBUTTONDOWN) return;
         auto pack = reinterpret_cast<std::pair<std::vector<SeatAnnotState>*, int*>*>(userdata);
@@ -157,10 +157,10 @@ int main(int argc, char** argv) {
     }, new std::pair<std::vector<SeatAnnotState>*, int*>(&current, &selectedIndex));
 
     while (true) {
-        if (needRedraw) {
+        if (need_red_raw) {
             curImg = cv::imread(images[imgIdx].string());
             if (curImg.empty()) { std::cerr << "Failed load: " << images[imgIdx] << "\n"; }
-            needRedraw = false;
+            need_red_raw = false;
         }
         draw(curImg);
         int k = cv::waitKey(30);
@@ -202,11 +202,11 @@ int main(int argc, char** argv) {
             if (imgIdx >= (int)images.size()) {
                 std::cout << "All images processed." << std::endl; break;
             }
-            needRedraw = true;
+            need_red_raw = true;
         } else if (k == 'n' || k == 'N') {
             imgIdx++;
             if (imgIdx >= (int)images.size()) { std::cout << "Done." << std::endl; break; }
-            needRedraw = true;
+            need_red_raw = true;
         } else if (k == '1' || k=='2' || k=='3' || k=='4') {
             if (selectedIndex >=0 && selectedIndex < (int)current.size()) {
                 current[selectedIndex].state = fromKey(k, current[selectedIndex].state);

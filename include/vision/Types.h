@@ -58,11 +58,12 @@ struct SeatFrameState {
 // 返回单帧所有座位状态的 .json 字符串
 std::string seatFrameStatesToJson(const std::vector<SeatFrameState>& states);
 
-// 返回包含帧级封装的一行 .jsonl（JSON Lines）
-// {
-//   frame_index, ts_ms, image_path, annotated_path,
-//   seats: [ { seat_id, seat_roi{x,y,w,h}, ... , person_boxes:[{x,y,w,h,conf,cls_id,cls_name}], object_boxes:[...] } ]
-// }
+/* 返回包含帧级封装的一行 .jsonl
+{
+   frame_index, ts_ms, image_path, annotated_path,
+   seats: [ { seat_id, seat_roi{x,y,w,h}, ... , person_boxes:[{x,y,w,h,conf,cls_id,cls_name}], object_boxes:[...] } ]
+}
+*/
 std::string seatFrameStatesToJsonLine(
     const std::vector<SeatFrameState>& states,
     int64_t ts_ms,
@@ -73,12 +74,5 @@ std::string seatFrameStatesToJsonLine(
 // 解析（如需要反序列化）
 bool parseSeatFrameStatesFromJson(const std::string& json, std::vector<SeatFrameState>& out);
 
-/* Q: 
-· 什么是序列化？
-· ts_ms是什么？
-· 为什么提供这两个接口给B？有必要吗？
-· 这两个接口返回什么？
-· 对于B而言这两个接口有什么用？
-*/
 } // namespace vision
 
