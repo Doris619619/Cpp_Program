@@ -1,0 +1,4 @@
+*.onnx filter=lfs diff=lfs merge=lfs -text
+seat_states.jsonl filter=lfs diff=lfs merge=lfs -text
+runtime/seat_states.jsonl filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
