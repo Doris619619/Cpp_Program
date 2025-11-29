@@ -1,4 +1,5 @@
 #include "seat_state_judger.hpp"
+#include "SeatDatabase.h"  // 新增：数据库头文件
 #include "data_structures.hpp"
 #include <json.hpp>
 #include <opencv2/video/background_segm.hpp>
@@ -18,7 +19,11 @@ using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 // 构造函数：初始化背景建模器
-SeatStateJudger::SeatStateJudger() {
+SeatStateJudger::SeatStateJudger() : db_(SeatDatabase::getInstance()) // 初始化数据库引用
+{
+    // 初始化数据库
+    db_.initialize();
+    
     mog2_ = createBackgroundSubtractorMOG2(500, 16.0, true);
     mog2_->setShadowValue(127);  // 阴影标记为 127，后续过滤
 }
