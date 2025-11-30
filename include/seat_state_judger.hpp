@@ -1,6 +1,6 @@
 #ifndef SEAT_STATE_JUDGER_HPP
 #define SEAT_STATE_JUDGER_HPP
-#include "SeatDatabase.h"  // YZC：这是数据库头文件，记得修改路径，不然会报错！！！
+#include "src/database/SeatDatabase.h"  // YZC：这是数据库头文件，记得修改路径，不然会报错！！！
 #include "data_structures.hpp"
 #include <opencv2/opencv.hpp>
 #include <vector>

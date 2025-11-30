@@ -1,5 +1,5 @@
 #include "seat_state_judger.hpp"
-#include "SeatDatabase.h"  // 新增：数据库头文件
+#include "src/database/SeatDatabase.h"  
 #include "data_structures.hpp"
 #include <json.hpp>
 #include <opencv2/video/background_segm.hpp>
@@ -201,119 +201,125 @@ bool SeatStateJudger::readLastFrameData(
     vector<A2B_Data>& out_a2b_data_list,
     vector<json>& out_seat_j_list
 ) {
-    const string last_frame_path = "/Users/chinooolee/Desktop/CSC3002/proj/Cpp_Program/runtime/last_frame.json";
+    const string last_frame_path = "./runtime/last_frame.jsonl";
     if (!fs::exists(last_frame_path)) {
-        cout << "[BModule] Warning: last_frame.json not found" << endl;
+        cout << "[BModule] Warning: last_frame.jsonl not found" << endl;
         return false;
     }
 
-    // 读取 JSON 文件
+    //读取last_frame.jsonl
     ifstream file(last_frame_path);
-    json j;
-    try {
-        file >> j;
-    } catch (const json::exception& e) {
-        cout << "[BModule] Error: parse last_frame.json failed: " << e.what() << endl;
-        return false;
-    }
+    string line;
+    bool has_valid_data = false;
 
-    // 解析图像路径（处理 Windows 路径分隔符 + 拼接项目根路径）
-    string image_path = j["image_path"];
-    replace(image_path.begin(), image_path.end(), '\\', '/');  // \ → /
-    string project_root = "/Users/chinooolee/Desktop/CSC3002/proj/Cpp_Program/";
-    string full_image_path = project_root + image_path;
+    while (getline(file, line)) {
+        if (line.empty()) continue; // 跳过空行
+        try {
+            json j = json::parse(line); // 每行解析一个JSON对象
+            has_valid_data = true;
 
-    // 检查图像文件是否存在
-    if (!fs::exists(full_image_path)) {
-        cout << "[BModule] Error: image file not found: " << full_image_path << endl;
-        return false;
-    }
+            // 3. 解析A同学的JSON字段（按他的输出格式调整，以下是基于常规JSONL的示例）
+            string image_path = j["image_path"].get<string>();
+            replace(image_path.begin(), image_path.end(), '\\', '/'); // 兼容Windows路径（A同学用MSVC编译，路径是\\）
+            string full_image_path = fs::current_path().string() + "/" + image_path;
 
-    // 读取图像（为空则生成默认黑图，避免崩溃）
-    Mat frame = imread(full_image_path);
-    if (frame.empty()) {
-        cout << "[BModule] Warning: failed to read image, create default black frame" << endl;
-        frame = Mat::zeros(1080, 1920, CV_8UC3);  // 默认 1080p 黑图
-    }
-
-    // 解析帧基本信息
-    int frame_index = j["frame_index"].get<int>();
-    string timestamp = msToISO8601(j["ts_ms"].get<int64_t>());
-
-    // 解析每个座位数据
-    for (auto& seat_j : j["seats"]) {
-        A2B_Data a2b_data;
-        a2b_data.frame_id = frame_index;
-        a2b_data.timestamp = timestamp;
-        a2b_data.frame = frame;
-        a2b_data.seat_id = to_string(seat_j["seat_id"].get<int>());
-
-        // 解析 seat_roi（从 seat_poly 计算，避免 roi 全为 0）
-        int roi_x = seat_j["seat_roi"]["x"].get<int>();
-        int roi_y = seat_j["seat_roi"]["y"].get<int>();
-        int roi_w = seat_j["seat_roi"]["w"].get<int>();
-        int roi_h = seat_j["seat_roi"]["h"].get<int>();
-
-        // 若 roi 无效（全为 0），从 seat_poly 计算最小外接矩形
-        if (roi_w == 0 || roi_h == 0) {
-            int min_x = INT_MAX, min_y = INT_MAX;
-            int max_x = INT_MIN, max_y = INT_MIN;
-            for (auto& pt : seat_j["seat_poly"]) {
-                int x = pt[0].get<int>();
-                int y = pt[1].get<int>();
-                min_x = std::min(min_x, x);
-                min_y = std::min(min_y, y);
-                max_x = std::max(max_x, x);
-                max_y = std::max(max_y, y);
+            cv::Mat frame = cv::imread(full_image_path);
+            if (frame.empty()) {
+                cout << "[BModule] Warning: 图像文件未找到：" << full_image_path << "，使用默认黑帧" << endl;
+                frame = cv::Mat::zeros(1080, 1920, CV_8UC3);
             }
-            roi_x = min_x;
-            roi_y = min_y;
-            roi_w = max_x - min_x;
-            roi_h = max_y - min_y;
-        }
-        a2b_data.seat_roi = Rect(roi_x, roi_y, roi_w, roi_h);
 
-        // 解析 person_boxes（行人检测框）
-        for (auto& pb : seat_j["person_boxes"]) {
-            DetectedObject obj;
-            obj.bbox = Rect(
-                pb["x"].get<int>(), pb["y"].get<int>(),
-                pb["w"].get<int>(), pb["h"].get<int>()
-            );
-            obj.score = pb["conf"].get<double>();
-            obj.class_name = pb["cls_name"].get<string>();
-            obj.class_id = pb["cls_id"].get<int>();
-            a2b_data.objects.push_back(obj);
-        }
+            int frame_index = j["frame_index"].get<int>();
+            string timestamp = msToISO8601(j["ts_ms"].get<int64_t>());
 
-        // 解析 object_boxes（物体检测框）
-        for (auto& ob : seat_j["object_boxes"]) {
-            DetectedObject obj;
-            obj.bbox = Rect(
-                ob["x"].get<int>(), ob["y"].get<int>(),
-                ob["w"].get<int>(), ob["h"].get<int>()
-            );
-            obj.score = ob["conf"].get<double>();
-            obj.class_name = ob["cls_name"].get<string>();
-            obj.class_id = ob["cls_id"].get<int>();
-            a2b_data.objects.push_back(obj);
-        }
+            // 解析每个座位的数据（A同学的JSON中“seats”数组存储单个座位信息）
+            for (auto& seat_j : j["seats"]) {
+                A2B_Data a2b_data;
+                a2b_data.frame_id = frame_index;
+                a2b_data.timestamp = timestamp;
+                a2b_data.frame = frame;
+                a2b_data.seat_id = to_string(seat_j["seat_id"].get<int>()); // 对齐A同学的seat_id字段
 
-        // 保存数据到输出列表
-        out_a2b_data_list.push_back(a2b_data);
-        out_seat_j_list.push_back(seat_j);  // 保存原始 JSON 数据
+                // 解析座位ROI（A同学的JSON中“seat_roi”字段，x/y/w/h）
+                int roi_x = seat_j["seat_roi"]["x"].get<int>();
+                int roi_y = seat_j["seat_roi"]["y"].get<int>();
+                int roi_w = seat_j["seat_roi"]["w"].get<int>();
+                int roi_h = seat_j["seat_roi"]["h"].get<int>();
+                // 兼容 seat_roi 全0的情况：用 seat_poly 计算最小包围矩形作为 ROI
+                if (roi_w == 0 || roi_h == 0) {
+                    // 后续通过 seat_poly 计算 ROI，先初始化一个默认值
+                    a2b_data.seat_roi = cv::Rect(0, 0, 1, 1);
+                } else {
+                    a2b_data.seat_roi = cv::Rect(roi_x, roi_y, roi_w, roi_h);
+                }
+            }
+
+            // 解析 seat_poly
+            if (seat_j.contains("seat_poly") && seat_j["seat_poly"].is_array()) {
+                std::vector<cv::Point2i> poly;
+                auto& poly_arr = seat_j["seat_poly"]; // 外层数组
+                for (size_t i = 0; i < poly_arr.size(); ++i) {
+                    auto& point_arr = poly_arr[i]; // 内层 [x,y] 数组
+                    if (point_arr.is_array() && point_arr.size() == 2) {
+                        int px = point_arr[0].get<int>(); // 第一个元素是 x
+                        int py = point_arr[1].get<int>(); // 第二个元素是 y
+                        poly.emplace_back(px, py); // 构造点并添加到多边形
+                    }
+                }
+                a2b_data.seat_poly = poly;
+
+                //如果 seat_roi 无效（全0），用 seat_poly 计算最小包围矩形作为 ROI
+                if (roi_w == 0 || roi_h == 0 && !poly.empty()) {
+                    cv::Rect bounding_rect = cv::boundingRect(poly);
+                    a2b_data.seat_roi = bounding_rect;
+                }
+            }
+
+            // 解析A同学的人检测框（person_boxes字段，直接复用检测结果）
+            for (auto& pb : seat_j["person_boxes"]) {
+                DetectedObject obj;
+                obj.bbox = cv::Rect(
+                    pb["x"].get<int>(), pb["y"].get<int>(),
+                    pb["w"].get<int>(), pb["h"].get<int>()
+                );
+                obj.score = pb["conf"].get<double>() / 10.0f; // 归一化到 0-1 范围
+                obj.score = ob["conf"].get<double>() / 10.0f;
+                obj.class_name = pb["cls_name"].get<string>();
+                obj.class_id = pb["cls_id"].get<int>();
+                a2b_data.person_boxes.push_back(obj);
+            }
+
+            // 解析A同学的物体检测框（object_boxes字段）
+            for (auto& ob : seat_j["object_boxes"]) {
+                DetectedObject obj;
+                obj.bbox = cv::Rect(
+                    ob["x"].get<int>(), ob["y"].get<int>(),
+                    ob["w"].get<int>(), ob["h"].get<int>()
+                );
+                obj.score = pb["conf"].get<double>() / 10.0f; // 归一化到 0-1 范围
+                obj.score = ob["conf"].get<double>() / 10.0f;
+                obj.class_name = ob["cls_name"].get<string>();
+                obj.class_id = ob["cls_id"].get<int>();
+                a2b_data.object_boxes.push_back(obj);
+            }
+
+                out_a2b_data_list.push_back(a2b_data);
+                out_seat_j_list.push_back(seat_j);
+            }
+        } catch (const json::exception& e) {
+            cout << "[BModule] Error: 解析A同学的JSONL行失败：" << e.what() << endl;
+            continue; // 跳过错误行，继续解析其他行
+        }
     }
 
-    return true;
+    return has_valid_data;
 }
+
 
 // 运行主函数
 void SeatStateJudger::run(const string& jsonl_path) {
     // 每次运行前重置帧索引存储，避免多次调用时重复
     resetNeedStoreFrameIndexes();
-    // 初始化数据库
-    SeatDatabase& db = SeatDatabase::getInstance();
-    db.initialize();
     
     if (!jsonl_path.empty()) {
         vector<vector<A2B_Data>> batch_a2b_data;
@@ -342,16 +348,34 @@ void SeatStateJudger::run(const string& jsonl_path) {
                     processAData(frame_a2b[seat_idx], frame_seat_j[seat_idx], state, alerts, snapshot, event);
 
                     ///YZC：我添加了这三个调用函数（最好还要对一下头文件的路径，database.h 这个）
-                    //直接在这里调用数据库入库
+                    // 数据库入库操作
                     if (event.has_value()) {
-                        db.insertSeatEvent(event->seat_id, event->state, event->timestamp, event->duration_sec);
+                        db_.insertSeatEvent(  // 使用成员变量db_
+                            event->seat_id,
+                            event->state,
+                            event->timestamp,
+                            event->duration_sec
+                        );
                     }
+                    
                     // 插入快照
-                    db.insertSnapshot(snapshot.timestamp, snapshot.seat_id， snapshot.state, snapshot.person_count);
-
+                    db_.insertSnapshot(
+                        snapshot.timestamp,
+                        snapshot.seat_id,  
+                        snapshot.state,
+                        snapshot.person_count
+                    );
+                    
                     // 插入告警
                     for (const auto& alert : alerts) {
-                        db.insertAlert(alert.alert_id, alert.seat_id, alert.alert_type, alert.alert_desc, alert.timestamp, alert.is_processed);
+                        db_.insertAlert(  // 使用成员变量db_
+                            alert.alert_id,
+                            alert.seat_id,
+                            alert.alert_type,
+                            alert.alert_desc,
+                            alert.timestamp,
+                            alert.is_processed
+                        );
                     }
                     
                     // 判定条件（可与A同学协商调整）
@@ -377,7 +401,7 @@ void SeatStateJudger::run(const string& jsonl_path) {
                     cout << endl;
                 }
 
-                // 关键修改：若当前帧需要入库，记录A同学的frame_index
+                // 关键修改：若当前帧需要入库，记录A的frame_index
                 if (need_store_this_frame) {
                     need_store_frame_indexes_.insert(a_frame_index);
                     cout << "[Info] 标记帧（A同学ID:" << a_frame_index << "）为需要入库" << endl;
@@ -388,9 +412,9 @@ void SeatStateJudger::run(const string& jsonl_path) {
                 this_thread::sleep_for(chrono::milliseconds(100));
             }
 
-            // 新增：输出需要入库的帧索引列表（供A同学查看）
+            // 新增：输出需要入库的帧索引列表（供A查看）
             //vector<int> need_store_list = getNeedStoreFrameIndexes();
-            //cout << "[Info] 所有帧处理完成！需要入库的帧索引（A同学ID）：" << endl;
+            //cout << "[Info] 所有帧处理完成！需要入库的帧索引：" << endl;
             //for (int idx : need_store_list) {
                 //cout << " - " << idx << endl;
             //}
@@ -455,134 +479,124 @@ void SeatStateJudger::run(const string& jsonl_path) {
     }
 }
 
-// 读取JSONL文件（完全适配格式+容错处理）
+// 读取JSONL文件
 bool SeatStateJudger::readJsonlFile(
-    const string& jsonl_path,
-    vector<vector<A2B_Data>>& out_batch_a2b_data,
-    vector<vector<json>>& out_batch_seat_j
+    const std::string& jsonl_path,
+    std::vector<std::vector<A2B_Data>>& batch_a2b_data,
+    std::vector<std::vector<json>>& batch_seat_j
 ) {
-    ifstream file(jsonl_path);
-    if (!file.is_open()) {
-        cerr << "[Error] 无法打开JSONL文件: " << jsonl_path << endl;
+    // 若未指定路径，默认读取A的输出路径
+    std::string actual_path = jsonl_path.empty() ? "./runtime/seat_states.jsonl" : jsonl_path;
+    if (!fs::exists(actual_path)) {
+        cout << "[BModule] Error: A的JSONL文件未找到（路径：" << actual_path << "）" << endl;
+        cout << "[BModule] 提示：请运行A的 a_demo.exe --out " << actual_path << " 生成文件" << endl;
         return false;
     }
 
+    ifstream file(actual_path);
     string line;
-    int line_num = 0;
+    int frame_count = 0;
+
     while (getline(file, line)) {
-        line_num++;
         if (line.empty()) continue;
         try {
             json j = json::parse(line);
+            std::vector<A2B_Data> frame_a2b;
+            std::vector<json> frame_seat_j;
 
-            // 强制验证核心字段（缺失则跳过）
-            if (!j.contains("frame_index") || !j["frame_index"].is_number_integer() ||
-                !j.contains("ts_ms") || !j["ts_ms"].is_number_integer() ||
-                !j.contains("seats") || !j["seats"].is_array() ||
-                !j.contains("image_path") || !j["image_path"].is_string()) {
-                cerr << "[Warn] 第" << line_num << "行缺少核心字段或类型错误，跳过" << endl;
-                continue;
+            // 解析单帧数据（逻辑和readLastFrameData一致，复用A同学的字段）
+            string image_path = j["image_path"].get<string>();
+            replace(image_path.begin(), image_path.end(), '\\', '/');
+            string full_image_path = fs::current_path().string() + "/" + image_path;
+
+            cv::Mat frame = cv::imread(full_image_path);
+            if (frame.empty()) {
+                cout << "[BModule] Warning: 图像文件未找到：" << full_image_path << "，使用默认黑帧" << endl;
+                frame = cv::Mat::zeros(1080, 1920, CV_8UC3);
             }
 
             int frame_index = j["frame_index"].get<int>();
-            int64_t ts_ms = j["ts_ms"].get<int64_t>();
-            string timestamp = msToISO8601(ts_ms);
-            string image_path = j["image_path"].get<string>();
-            replace(image_path.begin(), image_path.end(), '\\', '/');  // 处理Windows路径
+            string timestamp = msToISO8601(j["ts_ms"].get<int64_t>());
 
-            vector<A2B_Data> frame_a2b_data;
-            vector<json> frame_seat_j;
+            for (auto& seat_j : j["seats"]) {
+                A2B_Data a2b_data;
+                a2b_data.frame_id = frame_index;
+                a2b_data.timestamp = timestamp;
+                a2b_data.frame = frame;
+                a2b_data.seat_id = to_string(seat_j["seat_id"].get<int>());
 
-            // 遍历座位数组（使用const迭代器避免拷贝）
-            for (const auto& seat_j : j["seats"]) {
-                // 验证座位核心字段
-                if (!seat_j.contains("seat_id") || !seat_j["seat_id"].is_number_integer() ||
-                    !seat_j.contains("seat_roi") || !seat_j["seat_roi"].is_object()) {
-                    cerr << "[Warn] 第" << line_num << "行座位缺少seat_id或seat_roi，跳过" << endl;
-                    continue;
+                // 解析座位ROI
+                int roi_x = seat_j["seat_roi"]["x"].get<int>();
+                int roi_y = seat_j["seat_roi"]["y"].get<int>();
+                int roi_w = seat_j["seat_roi"]["w"].get<int>();
+                int roi_h = seat_j["seat_roi"]["h"].get<int>();
+                // 兼容 seat_roi 全0的情况：用 seat_poly 计算最小包围矩形作为 ROI
+                if (roi_w == 0 || roi_h == 0) {
+                    // 后续通过 seat_poly 计算 ROI，先初始化一个默认值
+                    a2b_data.seat_roi = cv::Rect(0, 0, 1, 1);
+                } else {
+                    a2b_data.seat_roi = cv::Rect(roi_x, roi_y, roi_w, roi_h);
                 }
+            }
 
-                const json& roi_json = seat_j["seat_roi"];
-                // 验证ROI字段完整性 + 过滤无效ROI（宽高>0）
-                if (!roi_json.contains("x") || !roi_json.contains("y") ||
-                    !roi_json.contains("w") || !roi_json.contains("h") ||
-                    !roi_json["x"].is_number() || !roi_json["y"].is_number() ||
-                    !roi_json["w"].is_number() || !roi_json["h"].is_number()) {
-                    cerr << "[Warn] 第" << line_num << "行座位ROI字段不完整，跳过" << endl;
-                    continue;
-                }
-
-                int roi_x = roi_json["x"].get<int>();
-                int roi_y = roi_json["y"].get<int>();
-                int roi_w = roi_json["w"].get<int>();
-                int roi_h = roi_json["h"].get<int>();
-                if (roi_w <= 0 || roi_h <= 0) {
-                    cerr << "[Warn] 第" << line_num << "行座位ROI无效（宽高<=0），跳过" << endl;
-                    continue;
-                }
-
-                // 构造A2B_Data
-                A2B_Data a_data;
-                a_data.frame_id = frame_index;
-                a_data.seat_id = to_string(seat_j["seat_id"].get<int>());
-                a_data.timestamp = timestamp;
-                a_data.seat_roi = Rect(roi_x, roi_y, roi_w, roi_h);
-
-                // 读取图像（适配JSONL中的image_path，为空则用黑图兜底）
-                //a_data.frame = imread(image_path);
-                //if (a_data.frame.empty()) {
-                    //cerr << "[Warn] 第" << line_num << "行图像路径无效：" << image_path << "，使用默认黑图" << endl;
-                    //a_data.frame = Mat::zeros(1080, 1920, CV_8UC3);
-                //}
-                a_data.frame = Mat::zeros(1080, 1920, CV_8UC3);
-                //cerr << "[Info] B模块测试模式：第" << line_num << "行使用默认黑图，聚焦时序判定逻辑" << endl;
-
-                // 解析person_boxes（仅处理有效框）
-                if (seat_j.contains("person_boxes") && seat_j["person_boxes"].is_array()) {
-                    for (const auto& pb : seat_j["person_boxes"]) {
-                        if (pb.contains("x") && pb.contains("y") && pb.contains("w") && pb.contains("h") && pb.contains("conf") &&
-                            pb["w"].get<int>() > 0 && pb["h"].get<int>() > 0) {
-                            DetectedObject obj;
-                            obj.bbox = Rect(pb["x"].get<int>(), pb["y"].get<int>(), pb["w"].get<int>(), pb["h"].get<int>());
-                            obj.score = pb["conf"].get<float>();
-                            obj.class_name = pb.contains("cls_name") ? pb["cls_name"].get<string>() : "person";
-                            obj.class_id = pb.contains("cls_id") ? pb["cls_id"].get<int>() : 0;
-                            a_data.objects.push_back(obj);
-                        }
+            // 解析 seat_poly
+            if (seat_j.contains("seat_poly") && seat_j["seat_poly"].is_array()) {
+                std::vector<cv::Point2i> poly;
+                auto& poly_arr = seat_j["seat_poly"]; // 外层数组
+                for (size_t i = 0; i < poly_arr.size(); ++i) {
+                    auto& point_arr = poly_arr[i]; // 内层 [x,y] 数组
+                    if (point_arr.is_array() && point_arr.size() == 2) {
+                        int px = point_arr[0].get<int>(); // 第一个元素是 x
+                        int py = point_arr[1].get<int>(); // 第二个元素是 y
+                        poly.emplace_back(px, py); // 构造点并添加到多边形
                     }
                 }
+                a2b_data.seat_poly = poly;
 
-                // 解析object_boxes（仅处理有效框）
-                if (seat_j.contains("object_boxes") && seat_j["object_boxes"].is_array()) {
-                    for (const auto& ob : seat_j["object_boxes"]) {
-                        if (ob.contains("x") && ob.contains("y") && ob.contains("w") && ob.contains("h") && ob.contains("conf") &&
-                            ob["w"].get<int>() > 0 && ob["h"].get<int>() > 0) {
-                            DetectedObject obj;
-                            obj.bbox = Rect(ob["x"].get<int>(), ob["y"].get<int>(), ob["w"].get<int>(), ob["h"].get<int>());
-                            obj.score = ob["conf"].get<float>();
-                            obj.class_name = ob.contains("cls_name") ? ob["cls_name"].get<string>() : "object";
-                            obj.class_id = ob.contains("cls_id") ? ob["cls_id"].get<int>() : 1;
-                            a_data.objects.push_back(obj);
-                        }
-                    }
+                //如果 seat_roi 无效（全0），用 seat_poly 计算最小包围矩形作为 ROI
+                if (roi_w == 0 || roi_h == 0 && !poly.empty()) {
+                    cv::Rect bounding_rect = cv::boundingRect(poly);
+                    a2b_data.seat_roi = bounding_rect;
+                }
+            }
+
+
+                // 解析人检测框
+                for (auto& pb : seat_j["person_boxes"]) {
+                    DetectedObject obj;
+                    obj.bbox = cv::Rect(pb["x"].get<int>(), pb["y"].get<int>(), pb["w"].get<int>(), pb["h"].get<int>());                    obj.score = pb["conf"].get<double>() / 10.0f; // 归一化到 0-1 范围
+                    obj.score = ob["conf"].get<double>() / 10.0f;
+                    obj.class_name = pb["cls_name"].get<string>();
+                    obj.class_id = pb["cls_id"].get<int>();
+                    a2b_data.person_boxes.push_back(obj);
                 }
 
-                frame_a2b_data.push_back(a_data);
+                // 解析物体检测框
+                for (auto& ob : seat_j["object_boxes"]) {
+                    DetectedObject obj;
+                    obj.bbox = cv::Rect(ob["x"].get<int>(), ob["y"].get<int>(), ob["w"].get<int>(), ob["h"].get<int>());
+                    obj.score = pb["conf"].get<double>() / 10.0f; // 归一化到 0-1 范围
+                    obj.score = ob["conf"].get<double>() / 10.0f;
+                    obj.class_name = ob["cls_name"].get<string>();
+                    obj.class_id = ob["cls_id"].get<int>();
+                    a2b_data.object_boxes.push_back(obj);
+                }
+
+                frame_a2b.push_back(a2b_data);
                 frame_seat_j.push_back(seat_j);
             }
 
-            // 只添加有有效座位的帧
-            if (!frame_a2b_data.empty()) {
-                out_batch_a2b_data.push_back(frame_a2b_data);
-                out_batch_seat_j.push_back(frame_seat_j);
+            if (!frame_a2b.empty()) {
+                batch_a2b_data.push_back(frame_a2b);
+                batch_seat_j.push_back(frame_seat_j);
+                frame_count++;
             }
-
         } catch (const json::exception& e) {
-            cerr << "[Error] 解析第" << line_num << "行失败: " << e.what() << endl;
+            cout << "[BModule] Error: 解析批量JSONL行失败：" << e.what() << endl;
             continue;
         }
     }
 
-    cout << "[Info] JSONL文件解析完成，共获取 " << out_batch_a2b_data.size() << " 个有效帧" << endl;
-    return true;
+    cout << "[BModule] 成功读取A的" << frame_count << "帧批量数据" << endl;
+    return frame_count > 0;
 }

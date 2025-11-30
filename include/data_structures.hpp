@@ -1,28 +1,30 @@
 #ifndef DATA_STRUCTURES_HPP
 #define DATA_STRUCTURES_HPP
-
+#pragma once
 #include <opencv2/core.hpp>    // 包含 cv::Mat、cv::Rect 等核心类型
 #include <opencv2/imgproc.hpp> // 图像处理相关类型
 #include <string>
 #include <vector>
 #include <optional>            // 用于 std::optional（B2C_SeatEvent）
 
-// 1. A模块→B模块的单物体检测结果
+// 1. 对齐A的person_boxes/object_boxes
 struct DetectedObject {
-    std::string class_name;  // 类别："person" 或 "object"
-    cv::Rect bbox;           // 边界框（x1,y1,width,height）
-    float score;             // 置信度（≥0.5）
-    int class_id;            // 类别ID（对应代码中的赋值）
+    std::string class_name;  // A的cls_name，"person" 或 "object"
+    cv::Rect bbox;           // 对应A的x/y/w/h，检测框坐标（x,y,w,h） 
+    float score;             // A的conf
+    int class_id;            // A的cls_id
 };
 
-// 2. A模块→B模块的完整数据（每帧+每个座位）
+// 2. 对齐A同学的A2B_Data结构体
 struct A2B_Data {
-    int frame_id;                          // 帧唯一ID
-    std::string seat_id;                   // 座位ID（如"Lib1-F2-015"）
+    int frame_id;                          // A的frame_index，帧ID
+    std::string seat_id;                   // A的seat_id，座位ID（如"Lib1-F2-015"）
     cv::Rect seat_roi;                     // 座位ROI坐标
-    std::vector<DetectedObject> objects;   // 该座位内的检测结果列表
-    std::string timestamp;                 // 帧采集时间（YYYY-MM-DD HH:MM:SS.ms）
-    cv::Mat frame;                         // 原始帧图像
+    std::vector<cv::Point2i> seat_poly;    // 座位多边形顶点（对应A的seat_poly）
+    std::vector<DetectedObject> person_boxes; // 人检测框列表
+    std::vector<DetectedObject> object_boxes; // 物体检测框列表
+    std::string timestamp;                 // 由A的ts_ms转换，ISO8601格式时间戳（YYYY-MM-DD HH:MM:SS.ms）
+    cv::Mat frame;                         // 由A的image_path读取，原始图像帧
 };
 
 // 3. B模块→C/D模块的座位状态数据
@@ -59,10 +61,10 @@ struct B2C_SeatEvent {
 
 // B模块→C模块：座位状态快照（对应seat_snapshots表）
 struct B2C_SeatSnapshot {
-    std::string seat_id;          // 对应seat_snapshots.seat_id
-    std::string state;            // 对应seat_snapshots.state
-    int person_count;             // 对应seat_snapshots.person_count（检测到的人数）
-    std::string timestamp;        // 对应seat_snapshots.timestamp（ISO8601格式）
+    std::string seat_id;          
+    std::string state;            // "Seated"/"Unseated"/"Anomaly"
+    int person_count;             // 检测到的人数
+    std::string timestamp;        // ISO8601格式
 };
 
 #endif // DATA_STRUCTURES_HPP

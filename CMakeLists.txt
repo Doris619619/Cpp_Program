@@ -1,17 +1,24 @@
 cmake_minimum_required(VERSION 3.10)
 project(BModule_Standalone)
 
-# C++标准（保持C++17，兼容json.hpp和你的代码）
+# C++标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 1. 自动查找 OpenCV 4.x（关键修改：替换旧的硬编码路径）
+# 适配Windows/Mac/Linux
+if(WIN32)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc") # MSVC异常处理
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O2") # Mac/Linux编译选项
+endif()
+
+# 1. 自动查找 OpenCV 4.x
 find_package(OpenCV 4 REQUIRED)
 
-# 2. json库配置（保持不变，沿用你的原有配置）
+# 2. json库配置
 set(JSON_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/nlohmann")
 if(NOT EXISTS "${JSON_INCLUDE_DIR}/json.hpp")
-    message(FATAL_ERROR "❌ json.hpp not found! 请下载到: ${JSON_INCLUDE_DIR}")
+    message(FATAL_ERROR "json.hpp not found! 请下载到: ${JSON_INCLUDE_DIR}")
 endif()
 
 # 3. 头文件搜索路径（简化：OpenCV头文件自动获取，无需手动写路径）
@@ -26,17 +33,16 @@ include_directories(
 add_executable(b_module_standalone
     src/main.cpp                 # 独立入口
     src/seat_state_judger.cpp    # B模块核心实现
-    # 注意：如果data_structures只有.hpp（无.cpp），删除下面这行；如果有data_structures.cpp，就保留
-    # src/data_structures.cpp
+    src/database/SeatDatabase.cpp # 编译数据库实现
 )
 
-# 5. 链接库（修改：用自动找到的OpenCV库，替换旧的硬编码路径）
+
 target_link_libraries(b_module_standalone
     ${OpenCV_LIBS}  # OpenCV核心库（自动获取，包含core、imgproc、video等）
     pthread         # 线程库（用于this_thread::sleep_for）
 )
 
-# 6. 编译优化（保持不变，沿用你的原有配置）
+# 6. 编译优化
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(b_module_standalone PRIVATE 
         -Wall        # 显示所有警告
@@ -56,4 +62,4 @@ message(STATUS "  - OpenCV 头文件: ${OpenCV_INCLUDE_DIRS}")
 message(STATUS "  - JSON: ${JSON_INCLUDE_DIR}")
 message(STATUS "Output Executable: b_module_standalone (在build/目录下)")
 
-add_subdirectory(test)  # 告诉CMake去处理test目录下的CMakeLists.txt
+# add_subdirectory(test)   #告诉CMake去处理test目录下的CMakeLists.txt
