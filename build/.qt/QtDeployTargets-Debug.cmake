@@ -1,3 +1,0 @@
-set(__QT_DEPLOY_TARGET_Library_System_FILE D:/CSC3002/Library_System/build/Debug/Library_System.exe)
-set(__QT_DEPLOY_TARGET_Library_System_TYPE EXECUTABLE)
-set(__QT_DEPLOY_TARGET_Library_System_RUNTIME_DLLS D:/app/qt2/6.7.3/msvc2022_64/bin/Qt6Chartsd.dll;D:/app/qt2/6.7.3/msvc2022_64/bin/Qt6OpenGLWidgetsd.dll;D:/app/qt2/6.7.3/msvc2022_64/bin/Qt6Widgetsd.dll;D:/app/qt2/6.7.3/msvc2022_64/bin/Qt6OpenGLd.dll;D:/app/qt2/6.7.3/msvc2022_64/bin/Qt6Guid.dll;D:/app/qt2/6.7.3/msvc2022_64/bin/Qt6Cored.dll)

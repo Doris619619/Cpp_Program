@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "MacOS",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/Users/chinooolee/Desktop/CSC3002/proj/Cpp_Program/include",
+                "${workspaceFolder}/third_party/nlohmann",
+                "/usr/local/include/opencv4", // 关键修改：替换为系统安装的 OpenCV 4 路径
+                "/Library/Developer/CommandLineTools/usr/include/c++/v1",
+                "/Library/Developer/CommandLineTools/usr/include",
+                "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+            ],
+            "defines": [],
+            "macFrameworkPath": [
+                "/System/Library/Frameworks", // 关键修改：移除旧的 opencv2.framework 路径
+                "/Library/Frameworks"
+            ],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "macos-clang-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}

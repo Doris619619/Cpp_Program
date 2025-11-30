@@ -1,4 +1,0 @@
-D:/CSC3002/Library_System/build/CMakeFiles/Library_System.dir
-D:/CSC3002/Library_System/build/CMakeFiles/INSTALL.dir
-D:/CSC3002/Library_System/build/CMakeFiles/ALL_BUILD.dir
-D:/CSC3002/Library_System/build/CMakeFiles/ZERO_CHECK.dir
