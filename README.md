@@ -21,9 +21,11 @@ Stream process (extract and process frames one-by-one)
 
 Examples:
 
+    cmake --preset msvc-ninja-debug
+    
     cmake --build --preset msvc-ninja-debug --clean-first
 
-    ./build/a_demo.exe [--framesrc <.\data\videos\v_20251123211503_cam54_002.mp4>] [--out <.\runtime\seat_states.jsonl>] [--max <10>] [--stream <true>]
+    ./build/a_demo.exe --framesrc .\data\videos\v_20251123211503_cam54_002.mp4 --out .\runtime\seat_states.jsonl --max 10 --stream true
 
 ## Project Part Structure
 
